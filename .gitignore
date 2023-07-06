@@ -1,0 +1,8 @@
+__pycache__/
+venv/
+requirements.in
+*.save
+*.old
+*.pem
+*.key
+*.egg-info
