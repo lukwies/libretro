@@ -15,7 +15,6 @@ setup(
 		'cryptography',
 		'sqlcipher3-binary'
 	],
-	python_requires='>=3.6',
 	classifiers=[
 		"Development Status :: 3 - Alpha",
 		"Environment :: Console",
