@@ -48,8 +48,11 @@ class TLSClient:
 		"""\
 		Send all data.
 		"""
-		if self.conn:
-			self.conn.sendall(data)
+		if not self.conn: return
+		nsent = 0
+		while nsent < len(data):
+			n = self.conn.send(data[nsent:])
+			nsent += n
 
 
 	def recv(self, max_bytes=4096, timeout_sec=None):

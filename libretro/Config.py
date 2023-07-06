@@ -29,7 +29,7 @@ class Config:
 		self.loglevel     = LOG.INFO
 		self.logformat    = '%(levelname)s  %(message)s'
 		self.logfile      = path_join(self.basedir, 'log.txt')
-		self.recv_timeout = 3
+		self.recv_timeout = 5
 
 		# [server]
 		self.server_address  = "127.0.0.1"
