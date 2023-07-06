@@ -5,7 +5,7 @@ import select
 import logging as LOG
 
 class TLSClient:
-	"""
+	"""\
 	TLS Client
 	"""
 	def __init__(self, host='127.0.0.1', port=8443,
@@ -24,7 +24,7 @@ class TLSClient:
 
 
 	def connect(self):
-		"""
+		"""\
 		Connect to server
 		"""
 		if self.conn:
@@ -42,7 +42,7 @@ class TLSClient:
 
 
 	def send(self, data):
-		"""
+		"""\
 		Send all data.
 		"""
 		if self.conn:
@@ -50,7 +50,7 @@ class TLSClient:
 
 
 	def recv(self, max_bytes=4096, timeout_sec=None):
-		"""
+		"""\
 		Receive data
 		Return:
 		  Data: Received data
@@ -62,7 +62,7 @@ class TLSClient:
 
 
 	def send_dict(self, dct):
-		"""
+		"""\
 		Send dictionary.
 		"""
 		if self.conn:
@@ -71,7 +71,7 @@ class TLSClient:
 
 	def recv_dict(self, force_keys=[], max_bytes=4096,
 			timeout_sec=None):
-		"""
+		"""\
 		Receive dictionary
 		Return:
 		  Dict: Received dictionary
@@ -85,19 +85,19 @@ class TLSClient:
 				timeout_sec=timeout_sec)
 
 	def close(self):
-		"""
+		"""\
 		Close ssl conn
 		"""
 		if self.conn:
 			self.conn.close()
 			self.conn = None
 
-	def cipher(self):
-		self.conn.cipher()
+#	def cipher(self):
+#		self.conn.cipher()
 
 
 def send_dictionary(conn, dct):
-	"""
+	"""\
 	Send dictionary
 	"""
 	try:
@@ -114,7 +114,7 @@ def send_dictionary(conn, dct):
 
 def recv_dictionary(conn, force_keys=[], max_bytes=4096,
 		timeout_sec=None):
-	"""
+	"""\
 	Receive data and convert it to dictionary.
 	Args:
 	  conn:        SSL connection
@@ -134,7 +134,7 @@ def recv_dictionary(conn, force_keys=[], max_bytes=4096,
 		data = conn.recv(max_bytes)
 		dct  = json.loads(data.decode())
 		if type(dct) != dict:
-			LOG.error("net.recv_dictionary: Invalid msg "\
+			LOG.error("Invalid msg "\
 				"format '{}'".format(data.decode()))
 			raise Exception("Invalid protocol '{}'".format(type(dct)))
 		for k in force_keys:
@@ -147,11 +147,11 @@ def recv_dictionary(conn, force_keys=[], max_bytes=4096,
 	except TypeError as te:
 		raise Exception(str(te))
 	except Exception as e:
-		raise
+		raise Exception("Server closed connection")
 
 
 def can_read(conn, timeout_sec):
-	"""
+	"""\
 	Check wheather there is data awailable at the given
 	connection before timeout exceeds.
 	Args:
