@@ -2,13 +2,9 @@
 
 Core library of the retro end2end encrypted terminal messenger.
 
-## Dependencies
- - cryptography
- - sqlcipher3-binary
-
 
 ## Install
-Installing libretro globally:
+Installing libretro:
 <pre>
 $ pip install .
 </pre>
@@ -37,8 +33,10 @@ net.py             Network functions (TLS)
 RetroClient.py     Central client context
 </pre>
 
-## Exmaple
+## Example
 <pre>
+
+from libretro.RetroClient import *
 
 # Create client context
 retroClient = RetroClient()
