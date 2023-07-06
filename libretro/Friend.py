@@ -5,7 +5,7 @@ import logging as LOG
 
 from libretro.crypto import RetroPublicKey
 
-"""
+"""\
 A friend is another peer within the retro network,
 of whom we already know the public-key and username.
 
@@ -44,7 +44,7 @@ class Friend:
 
 
 	def load(self, name, path):
-		"""
+		"""\
 		Load friends public key from given path and
 		set name and userid.
 
@@ -54,7 +54,7 @@ class Friend:
 		"""
 		self.name = name
 		self.pubkey.load(path)
-		self.id = self.pubkey.get_keyid(hexify=True)
+		self.id = self.pubkey.get_keyid()
 
 		LOG.debug("Loaded friend, name='{}' id={}"\
 			.format(self.name, self.id))

@@ -1,4 +1,4 @@
-"""
+"""\
 
 This file contains all crypto functions/classes used
 by retro.
@@ -133,7 +133,7 @@ class RetroPrivateKey:
 
 
 	def sign(self, data, encode_base64=False):
-		"""
+		"""\
 		Sign given data using the ed25519 key.
 		Args:
 		  data:          Data to sign (bytes).
@@ -146,7 +146,7 @@ class RetroPrivateKey:
 
 
 	def get_public(self):
-		"""
+		"""\
 		Return RetroPublic key.
 		"""
 		pub = RetroPublicKey()
@@ -253,12 +253,9 @@ class RetroPublicKey:
 			return False
 
 
-	def get_keyid(self, hexify=False):
-		"""
-		Returns a 16byte id of this public retro key.
-		The keyid is built like this:
-		   hash  = sha512(DER(rsa) + DER(ec))
-		   keyid = hash[0-7] + hash[56-63]
+	def get_keyid(self):
+		"""\
+		Returns a 16-character-long id of this public retro key.
 		"""
 		rsabuf = self.rsa.public_bytes(
 			encoding=serialization.Encoding.DER,
@@ -267,17 +264,17 @@ class RetroPublicKey:
 			encoding=serialization.Encoding.DER,
 			format=serialization.PublicFormat.SubjectPublicKeyInfo)
 
-		hash  = hash_sha512(rsabuf+ecbuf)
-		keyid = b'' #hash[:8] + hash[-8:]
-		for i in range(0, 8):
-			keyid += hash[i*8].to_bytes()
+		idbuf = hash_sha512(rsabuf+ecbuf, True)
+		keyid = ''
+		for i in range(0, len(idbuf), 8):
+			keyid += idbuf[i*8]
 
-		return keyid.hex() if hexify else keyid
+		return keyid
 
 ########################################
 
 def random_buffer(length, return_hex=False):
-	"""
+	"""\
 	Returns random buffer with given length.
 	"""
 	if return_hex:
@@ -286,7 +283,7 @@ def random_buffer(length, return_hex=False):
 
 
 def hash_sha256(data, return_hex=False):
-	"""
+	"""\
 	Hash data with sha256
 	Args:
 	  data:  Data to hash
@@ -300,7 +297,7 @@ def hash_sha256(data, return_hex=False):
 	return dig.hex() if return_hex else dig
 
 def hash_sha512(data, return_hex=False):
-	"""
+	"""\
 	Hash data with sha512
 	Args:
 	  data:  Data to hash
@@ -315,7 +312,7 @@ def hash_sha512(data, return_hex=False):
 
 
 def hmac_sha256(key, data):
-	"""
+	"""\
 	Calculate HMAC-SHA256 from given data and given key.
 	Args:
 	  key:  Signing key
@@ -330,7 +327,7 @@ def hmac_sha256(key, data):
 
 
 def aes_encrypt(key, data):
-	"""
+	"""\
 	Encrypt data using AES-256-cbc.
 	Args:
 	  data: Bytes to encrypt
@@ -351,7 +348,7 @@ def aes_encrypt(key, data):
 
 
 def aes_decrypt(key, data, iv):
-	"""
+	"""\
 	Decrypt data using AES-256-cbc.
 	Args:
 	  key:  Decryption key
@@ -372,7 +369,7 @@ def aes_decrypt(key, data, iv):
 
 
 def aes_encrypt_from_file(key, filepath):
-	"""
+	"""\
 	Compress/Encrypt file to buffer.
 	The encrypted buffer contains the IV, HMAC and cipher
 	text and will be formatted likes this:
@@ -395,7 +392,7 @@ def aes_encrypt_from_file(key, filepath):
 
 
 def aes_decrypt_to_file(key, file_buf, filepath):
-	"""
+	"""\
 	Decrypt/Decompress file_buf (IV+HMAC+DATA)
 	and store it to given filepath.
 	"""

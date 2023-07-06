@@ -13,7 +13,7 @@ from libretro.FriendDb import FriendDb
 from libretro.crypto import RetroPrivateKey, RetroPublicKey
 
 
-"""
+"""\
 The Account class holds all information about a (single) retro
 user account.
 
@@ -175,13 +175,12 @@ class Account:
 
 			# Since we don't know the name of the public keyfile
 			# take the first '.pem' file that's not 'key.pem'.
-			# TODO
 			for f in os_listdir(self.path):
 				if f.endswith('.pem') and f != 'key.pem':
 					pkpath = path_join(self.path, f)
 					LOG.debug("Account.load: Load public key " + pkpath)
 					self.pubkey.load(pkpath)
-					self.id = self.pubkey.get_keyid(hexify=True)
+					self.id = self.pubkey.get_keyid()
 
 		except FileNotFoundError as e:
 			raise FileNotFoundError("Account.load: " + str(e))
@@ -358,7 +357,7 @@ def create_new_account(accounts_dir=None):
 	key.save(path, pw)
 
 	pubkey = key.get_public()
-	pkid   = pubkey.get_keyid(hexify=True)
+	pkid   = pubkey.get_keyid()
 	path   = path_join(userdir, pkid + '.pem')
 	pubkey.save(path)
 
