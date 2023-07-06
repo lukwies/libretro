@@ -7,7 +7,7 @@ import logging as LOG
 import traceback
 
 
-"""
+"""\
 Basic configs
 """
 
@@ -40,7 +40,7 @@ class Config:
 
 
 	def load(self):
-		"""
+		"""\
 		Read config file "basedir/config.txt"
 		"""
 		try:

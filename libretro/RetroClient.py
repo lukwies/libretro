@@ -18,9 +18,9 @@ from libretro.Friend import Friend
 from libretro.MsgHandler import MsgHandler
 from libretro.MsgStore import MsgStore
 
-"""
-
+"""\
 Requires the following directory tree:
+
 ~/.retro/
   |__ config.txt			# Base config (server settings)
   |__ server-cert.pem			# Server certificate
@@ -58,7 +58,7 @@ class RetroClient:
 
 
 	def load(self, username, password):
-		"""
+		"""\
 		Load all settings.
 		NOTE: Call this before running any other functions.
 
@@ -84,7 +84,7 @@ class RetroClient:
 
 
 	def load_account(self, username, password):
-		"""
+		"""\
 		(Re)load account
 		"""
 
@@ -106,7 +106,7 @@ class RetroClient:
 
 
 	def connect(self):
-		"""
+		"""\
 		Connect to server and perform handshake.
 		Raises:
 		  Exception

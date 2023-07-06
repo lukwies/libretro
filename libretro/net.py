@@ -32,10 +32,13 @@ class TLSClient:
 		try:
 			LOG.info("TLSClient: connecting to {}:{} ..."\
 				.format(self.host, self.port))
+			client = create_connection((self.host,self.port))
+
 			self.ssl = SSLContext(PROTOCOL_TLS_CLIENT)
 			self.ssl.load_verify_locations(self.certpath)
-			client = create_connection((self.host,self.port))
-			self.conn = self.ssl.wrap_socket(client, server_hostname=self.hostname)
+			self.conn = self.ssl.wrap_socket(client,
+				server_hostname=self.hostname)
+
 		except Exception as e:
 			LOG.error("TLSClient.connect: " + str(e))
 			raise #Exception("TLSClient.connect: " + str(e))
