@@ -267,7 +267,7 @@ class RetroPublicKey:
 		idbuf = hash_sha512(rsabuf+ecbuf, True)
 		keyid = ''
 		for i in range(0, len(idbuf), 8):
-			keyid += idbuf[i*8]
+			keyid += idbuf[i]
 
 		return keyid
 
