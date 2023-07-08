@@ -278,7 +278,7 @@ def random_buffer(length, return_hex=False):
 	Returns random buffer with given length.
 	"""
 	if return_hex:
-		return os_urandom(length/2).hex()
+		return os_urandom(int(length/2)).hex()
 	else:	return os_urandom(length)
 
 
