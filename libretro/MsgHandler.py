@@ -10,7 +10,7 @@ from libretro.crypto import aes_encrypt, aes_decrypt, hmac_sha256
 from libretro.crypto import hash_sha512
 
 
-"""
+"""\
 End2End message en/decryption.
 
 
@@ -57,7 +57,7 @@ class MsgHandler:
 
 
 	def __init__(self, account):
-		"""
+		"""\
 		Create message handler for given client.
 		Args:
 		  account: RetroClient account
@@ -66,7 +66,7 @@ class MsgHandler:
 
 
 	def make_msg(self, friend, text, msg_type='message'):
-		"""
+		"""\
 		Create a new en2end encrypted message.
 
 		Args:
@@ -134,7 +134,7 @@ class MsgHandler:
 
 
 	def make_file_msg(self, friend, file_dict):
-		"""
+		"""\
 		Create an end2end encrypted file message.
 		Args:
 		  file_dict: File settings
@@ -157,9 +157,11 @@ class MsgHandler:
 
 
 	def decrypt_msg(self, msg):
-		"""
+		"""\
 		Decrypt end2end message.
 		(See description on top of page)
+		Supported message types are: 'message', 'file-message'
+		and 'start-call'.
 
 		Args:
 		  msg: e2e enctypted message (dictionary)
@@ -229,6 +231,9 @@ class MsgHandler:
 			file_dict = json.loads(msg_text)
 			msg_res = dict(msg_res, **file_dict)
 			msg_res['downloaded'] = False
+		elif msg['type'] == 'start-call':
+			call_dict = json.loads(msg_text)
+			msg_res = dict(msg_res, **call_dict)
 		else:
 			msg_res['msg'] = msg_text
 
@@ -238,7 +243,7 @@ class MsgHandler:
 
 	def get_message(self, sender, receiver, text,
 			unseen=False, msgtype='message'):
-		"""
+		"""\
 		Get (not-encrypted) message.
 		"""
 		return {
