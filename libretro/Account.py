@@ -54,7 +54,7 @@ class Account:
 
 
 	def load(self, username, password):
-		"""
+		"""\
 		Load account.
 
 		Args:
@@ -90,7 +90,7 @@ class Account:
 
 
 	def load_friends(self):
-		"""
+		"""\
 		Load all friends of this account.
 		1) Load userid/username dict from FriendDb
 		   at accounts/USER/friends/friends.db
@@ -127,7 +127,7 @@ class Account:
 
 
 	def add_friend(self, username, pubkey_path):
-		"""
+		"""\
 		Add a new friend to this account.
 		- Copy given keyfile to accounts/USER/friends/USERID.pem
 		- Add entry to accounts/USER/friends/friends.db
@@ -147,7 +147,7 @@ class Account:
 
 
 	def get_friend_by_id(self, userid):
-		"""
+		"""\
 		Get friend by userid.
 		Returns None if friend doesn't exist.
 		"""
@@ -156,7 +156,7 @@ class Account:
 			else None
 
 	def get_friend_by_name(self, username):
-		"""
+		"""\
 		Get friend by username.
 		Returns None if friend doesn't exist.
 		"""
@@ -168,7 +168,6 @@ class Account:
 	def __load_keys(self):
 		# Load users private and public rsa/ed25519 keys
 		try:
-
 			kpath = path_join(self.path, "key.pem")
 			LOG.debug("Account.load: Load private key " + kpath)
 			self.key.load(kpath, self.pw)
@@ -183,13 +182,13 @@ class Account:
 					self.id = self.pubkey.get_keyid()
 
 		except FileNotFoundError as e:
-			raise FileNotFoundError("Account.load: " + str(e))
+			raise FileNotFoundError("Account.load_keys: " + str(e))
 		except Exception as e:
-			raise e
+			raise Exception("Account.load_keys: " + str(e))
 
 
 def validate_username(username):
-	"""
+	"""\
 	Validates given username.
 	Raises:
 	  ValueError: On invalid format
@@ -218,7 +217,7 @@ def validate_username(username):
 				" in username '{}'".format(username, c))
 
 def validate_password(password, min_length=8):
-	"""
+	"""\
 	Validate if given password is secure.
 
 	>= 2 different lowercase charakters
@@ -261,7 +260,7 @@ def validate_password(password, min_length=8):
 
 
 def get_all_accounts(accounts_dir=None):
-	"""
+	"""\
 	Get list with all account names.
 	If no account dirpath is given we use the default
 	path: ~/.retro/accounts
@@ -277,7 +276,7 @@ def get_all_accounts(accounts_dir=None):
 
 
 def create_new_account(accounts_dir=None):
-	"""
+	"""\
 	Create a new retro account (locally).
 
 	1) Read username/password from user (stdin)
@@ -379,7 +378,7 @@ def create_new_account(accounts_dir=None):
 
 
 def chose_account_name(accounts_dir=None):
-	"""
+	"""\
 	Let user select account from list with all existing accounts.
 
 	If there's just a single account, return that account name.

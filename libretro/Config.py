@@ -32,16 +32,20 @@ class Config:
 		self.recv_timeout = 5
 
 		# [server]
-		self.server_address  = "127.0.0.1"
-		self.server_hostname = self.server_address
-		self.server_port     = 8443
-		self.server_fileport = 8444
-		self.server_certfile = path_join(self.basedir, 'server-cert.pem')
+		self.server_address   = "127.0.0.1"
+		self.server_hostname  = self.server_address
+		self.server_port      = 8443
+		self.server_fileport  = 8444
+		self.server_audioport = 8445
+		self.server_certfile  = path_join(self.basedir, 'server-cert.pem')
 
 
 	def load(self):
 		"""\
 		Read config file "basedir/config.txt"
+
+		Raises:
+		  Exception: If failed to open/read config file
 		"""
 		try:
 			LOG.debug("Loading configs from " + self.config_file)
@@ -68,20 +72,22 @@ class Config:
 			self.server_fileport = conf.getint('server',
 						'fileport',
 						fallback=self.server_fileport)
+			self.server_audioport = conf.getint('server',
+						'audioport',
+						fallback=self.server_audioport)
 			self.server_hostname = conf.get('server', 'hostname',
 						fallback=self.server_hostname)
 			self.server_certfile = conf.get('server', 'certificate',
 						fallback=self.server_certfile)
 			return True
 		except configparser.NoOptionError as e:
-			LOG.error("Reading config file '"+self.config_file+"'")
-			LOG.error("Config: " + str(e))
-			return False
+			raise Exception("Config.load: " + str(e))
 		except Exception as e:
-			LOG.error("Reading config file '"+self.config_file+"'")
-			LOG.error("Config: " + str(e))
-			traceback.print_exc()
-			return False
+			raise Exception("Config.load: " + str(e))
+#			LOG.error("Reading config file '"+self.config_file+"'")
+#			LOG.error("Config: " + str(e))
+#			traceback.print_exc()
+#			return False
 
 
 	def debug(self):
@@ -96,10 +102,11 @@ class Config:
 		LOG.debug("  hostname       = {}".format(self.server_hostname))
 		LOG.debug("  port           = {}".format(self.server_port))
 		LOG.debug("  fileport       = {}".format(self.server_fileport))
+		LOG.debug("  audioport      = {}".format(self.server_audioport))
 
 
 	def loglevel_string_to_level(self, loglevel_str):
-		"""
+		"""\
 		Return loglevel from string.
 		Supported strings: 'ERROR', 'WARN', 'INFO',
 				   'DEBUG'
