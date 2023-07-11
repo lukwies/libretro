@@ -64,10 +64,12 @@ class RetroClient:
 
 		1. Read base configs from ~/.retro/config.txt
 		2. Read account infos from ~/.retro/accounts/USER
+
+		Raises:
+		  Exception: If failed to load config, account, ...
 		"""
 		# Get server settings from config.txt
-		if not self.conf.load():
-			return False
+		self.conf.load()
 
 		# Init logging
 		if self.conf.logfile:
@@ -80,7 +82,7 @@ class RetroClient:
 			LOG.basicConfig(level=self.conf.loglevel,
 					format=self.conf.logformat)
 
-		return self.load_account(username, password)
+		self.load_account(username, password)
 
 
 	def load_account(self, username, password):
@@ -102,7 +104,6 @@ class RetroClient:
 		# connect everything
 		self.msgHandler = MsgHandler(self.account)
 		self.msgStore   = MsgStore(self.account)
-		return True
 
 
 	def connect(self):
