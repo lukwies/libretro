@@ -1,10 +1,12 @@
 from os.path import join as path_join
 from os.path import basename as path_basename
-import logging as LOG
+import logging
 from sqlcipher3 import dbapi2 as sqlcipher
 from time import time as time_now
 
 from libretro.crypto import hash_sha256
+
+LOG = logging.getLogger(__name__)
 
 """
 This database is made to resolve a friend's userid to its
@@ -14,7 +16,7 @@ username. It just contains a single table:
  | friends            |
  +-----------+--------+
  | _id       | _name  |
- | TEXT (PK) | TEXT   |
+ | BLOB (PK) | TEXT   |
  +-----------+--------+
 
 """
@@ -22,7 +24,7 @@ class FriendDb:
 
 	CREATE_TABLE_FRIENDS = \
 		'''CREATE TABLE IF NOT EXISTS friends (
-			_id TEXT UNIQUE NOT NULL,
+			_id BLOB UNIQUE NOT NULL,
 			_name TEXT NOT NULL)'''
 
 	def __init__(self, path, password):
@@ -34,7 +36,7 @@ class FriendDb:
 
 
 	def add(self, userid, username):
-		"""
+		"""\
 		Add friend to database.
 		"""
 		db = self.__open()
@@ -44,9 +46,18 @@ class FriendDb:
 		db.commit()
 		db.close()
 
+	def delete_by_id(self, userid):
+		"""\
+		Delete Friend by userid.
+		"""
+		db = self.__open()
+		db.execute("DELETE FROM friends"\
+			" WHERE _id=?;", (userid,))
+		db.commit()
+		db.close()
 
 	def get_all(self):
-		"""
+		"""\
 		Get all entries from table 'friends' and return them
 		as a dictionary, where key is the userid and value
 		the username.

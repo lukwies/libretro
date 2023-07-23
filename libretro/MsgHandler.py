@@ -1,14 +1,15 @@
-from base64 import b64encode,b64decode
 from time import strftime
-import logging as LOG
+import logging
 import json
 
-import zlib
 
+from libretro.protocol import *
 from libretro.crypto import random_buffer
-from libretro.crypto import aes_encrypt, aes_decrypt, hmac_sha256
-from libretro.crypto import hash_sha512
+from libretro.crypto import aes_encrypt, aes_decrypt
+from libretro.crypto import hmac_sha256, hash_sha512
 
+
+LOG = logging.getLogger(__name__)
 
 """\
 End2End message en/decryption.
@@ -17,7 +18,7 @@ End2End message en/decryption.
 An unencrypted chat message has the following format:
 
   {
-    'type'   : 'message'|'file-message'
+    'type'   : Proto.T_CHATMSG|Proto.T_FILEMSG
     'from'   : USERID,
     'to'     : USERID,
     'time'   : SENT_TIME (yyyy-mm-dd HH:MM),
@@ -27,29 +28,20 @@ An unencrypted chat message has the following format:
     'fileid      : FILE_ID,	# These values are
     'filename'   : FILE_NAME,	# only existant if
     'size'       : FILE_SIZE,	# message type is
-    'key'        : base64(KEY),	# 'file-message'
+    'key'        : base64(KEY),	# Proto.T_FILEMSG
     'downloaded' : True|False	#
   }
 
 An encrypted chat message looks like:
 
-  {
-    'type'   : 'message'|'file-message'
-    'from'   : USERID,
-    'to'     : USERID,
-    'header' : [key+IV+HMAC(body)+SENT_TIME] (rsa-encrypted)
-    'sig'    : ED25519 signature of (ecrypted) body,
-    'body'   : body
-  }
-
-  If type is 'file-message' the (decrytped) body is a
-  dictionary holding the file informations.
-  {
-    'fileid'   : FILE_ID  (hex,n=32),
-    'filename' : FILE_NAME (string),
-    'size'     : FILE_SIZE (long int),
-    'key'      : ENCR_KEY (base64)
-  }
+  version	2 byte
+  packet type	2 byte (T_CHATMSG|T_FILEMSG|T_START_CALL)
+  payload size	4 byte
+  from		8 byte
+  to		8 byte
+  header	256 byte
+  signature	64 byte
+  body		...
 
 """
 
@@ -65,21 +57,21 @@ class MsgHandler:
 		self.account = account
 
 
-	def make_msg(self, friend, text, msg_type='message'):
+	def make_msg(self, friend, text, msg_type=Proto.T_CHATMSG):
 		"""\
-		Create a new en2end encrypted message.
+		Create an en2end encrypted message.
 
 		Args:
 		  friend:   Friend that shall receive the message
 		  text:     Message text
-		  msg_type: Message type (Default: 'message')
+		  msg_type: Message type (Proto.T_CHATMSG|Proto.T_FILEMSG)
 
 		Return:
-		  This function returns two dictionaries,
-		  the message and the end2end-encrypted message.
+		  message:     Unencrypted message as dictionary
+		  pckt_buffer: Encrypted message as byte buffer
 
 		Raises:
-			ValueError: If friend doesn't exist
+		  ValueError: If friend doesn't exist
 		"""
 		# Generate Master key (kM) and hash it with sha512
 		kM = random_buffer(32)
@@ -100,17 +92,22 @@ class MsgHandler:
 		now = strftime('%y-%m-%d %H:%M')
 
 		# Create RSA encrypted header (kM+IV+HMAC+Timestamp).
-		# The header will be base64 encoded.
 		header_raw = kM + iv + hmac + now.encode()
-		header = friend.pubkey.encrypt(header_raw,
-				encode_base64=True)
+		header = friend.pubkey.encrypt(header_raw)
 
 		# Sign message with accounts signing key.
-		# Signature will be base64 encoded.
-		signature = self.account.key.sign(enc, True)
+		signature = self.account.key.sign(enc)
 
-		# Base64 encode message body
-		body = b64encode(enc)
+		# Create e2e packet buffer
+		e2e_buf = self.account.id + friend.id + \
+			  header + signature + enc
+#		e2e_msg = Proto.pack_packet(
+#			msg_type,
+#			self.account.id,
+#			friend.id,
+#			header,
+#			signature,
+#			enc)
 
 		# Create message dictionaries
 		msg = {
@@ -122,15 +119,7 @@ class MsgHandler:
 			'unseen' : 0
 		}
 
-		e2e_msg = {
-			'type'   : msg_type,
-			'from'   : self.account.id,
-			'to'     : friend.id,
-			'header' : header.decode(),
-			'sig'    : signature.decode(),
-			'body'   : body.decode()
-		}
-		return msg,e2e_msg
+		return msg,e2e_buf
 
 
 	def make_file_msg(self, friend, file_dict):
@@ -145,52 +134,50 @@ class MsgHandler:
 			  'key' : base64(KEY),
 			}
 		Return:
-		  msg,e2e_msg
+		  msg,packet_buffer
 		"""
-		msg,e2e_msg = self.make_msg(friend,
+		msg,e2e_buf = self.make_msg(friend,
 				json.dumps(file_dict),
-				msg_type='file-message')
+				msg_type=Proto.T_FILEMSG)
 		msg = dict(msg, **file_dict)
 		msg['msg'] = ''
 
-		return msg,e2e_msg
+		return msg,e2e_buf
 
 
-	def decrypt_msg(self, msg):
+	def decrypt_msg(self, msg_type, e2e_msg):
 		"""\
 		Decrypt end2end message.
 		(See description on top of page)
-		Supported message types are: 'message', 'file-message'
-		and 'start-call'.
-
+		Supported message types are:
+			Proto.T_CHATMSG
+			Proto.T_FILEMSG
+			Proto.T_START_CALL
 		Args:
-		  msg: e2e enctypted message (dictionary)
+		  msg_type: Type of received packet
+		  e2e_msg: e2e enctypted message (bytes)
 		Return:
-		  Decrypted message (dictionary)
+		  Friend (sender), Decrypted message (dictionary)
 
 		Raises:
 			Exception, ValueError
 		"""
+		mfrom, mto, mhdr, msig, mbody =\
+			Proto.unpack_packet(e2e_msg, Proto.UNPACK_T_E2EMSG)
 
 		# Check if message sender is one of our friends.
-		if msg['from'] not in self.account.friends:
-			raise ValueError("MsgHandler.make_msg: "\
-				"No such friend '"+msg['from']+"'")
-		friend = self.account.friends[msg['from']]
-
-		# Decode aes encrypted message body from base64
-		enc = b64decode(msg['body'])
-
-		# Decode signature from base64
-		sig = b64decode(msg['sig'])
+		if mfrom not in self.account.friends:
+			raise ValueError(
+				"No such friend '"+mfrom.hex()+"'")
+		friend = self.account.friends[mfrom]
 
 		# Verify message signature (ed25519)
-		if not friend.pubkey.verify(sig, enc):
+		if not friend.pubkey.verify(msig, mbody):
 			raise ValueError("Invalid msg signature "\
-				"from '" + msg['from'] + "'")
+				"from '" + mfrom.hex() + "'")
 
 		# Decrypt received message header (rsa)
-		hdr = self.account.key.decrypt(msg['header'], True)
+		hdr = self.account.key.decrypt(mhdr)
 
 		# Get keyE+keyH+IV+HMAC from buffer
 		kM    = hdr[:32]		# Master key
@@ -206,20 +193,20 @@ class MsgHandler:
 		# Calculate HMAC from iv+encrypted message using
 		# extracted encryption key (kE) and see if it's
 		# the same as the received one.
-		hmac2 = hmac_sha256(kS, iv+enc)
+		hmac2 = hmac_sha256(kS, iv+mbody)
 		if hmac != hmac2:
 			LOG.warning("HMAC's do not match!")
-			LOG.warning("  hmac1: {}".format(hmac))
-			LOG.warning("  hmac2: {}".format(hmac2))
+			LOG.warning("  hmac1: "+hmac.hex())
+			LOG.warning("  hmac2: "+hmac2.hex())
 			raise ValueError("HMAC's mismatch")
 
 		# Decrypt and decode message
-		msg_text = aes_decrypt(kE, enc, iv)
+		msg_text = aes_decrypt(kE, mbody, iv)
 		msg_text = msg_text.decode()
 
 		# Build (decrypted) message dict
 		msg_res = {
-			'type'   : msg['type'],
+			'type'   : msg_type,
 			'from'   : friend.name,
 			'to'     : self.account.name,
 			'time'   : dtime,
@@ -227,22 +214,22 @@ class MsgHandler:
 			'unseen' : 1
 		}
 
-		if msg['type'] == 'file-message':
+		if msg_type == Proto.T_FILEMSG:
 			file_dict = json.loads(msg_text)
 			msg_res = dict(msg_res, **file_dict)
 			msg_res['downloaded'] = False
-		elif msg['type'] == 'start-call':
+		elif msg_type == Proto.T_START_CALL:
 			call_dict = json.loads(msg_text)
 			msg_res = dict(msg_res, **call_dict)
 		else:
 			msg_res['msg'] = msg_text
 
-		return msg_res
+		return friend,msg_res
 
 
 
 	def get_message(self, sender, receiver, text,
-			unseen=False, msgtype='message'):
+			unseen=False, msgtype=Proto.T_CHATMSG):
 		"""\
 		Get (not-encrypted) message.
 		"""

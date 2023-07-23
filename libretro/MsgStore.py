@@ -1,8 +1,12 @@
 from os.path import join as path_join
 from os.path import basename as path_basename
-import logging as LOG
+import logging
 from sqlcipher3 import dbapi2 as sqlcipher
 from time import time as time_now
+
+from libretro.protocol import Proto
+
+LOG = logging.getLogger(__name__)
 
 """
 The message store is a cached system for storing chat messages.
@@ -33,6 +37,16 @@ class MsgStore:
 		self.conversations = {}
 
 
+	@staticmethod
+	def get_msgdb_name(friend_id):
+		"""\
+		Returns the name of the message database for
+		a certain friend (id). The name is the friend's
+		userid in hex and the extension '.db'.
+		"""
+		return friend_id.hex() + ".db"
+
+
 	def close(self):
 		"""
 		Close all database connections
@@ -49,7 +63,7 @@ class MsgStore:
 		  friend: Friend object
 		  msg:    Message dictionary
 		    Format: {
-			'type'       : 'message'|'file-message'
+			'type'       : T_CHATMSG, T_FILEMSG
 			'from'       : USER,
 			'to'         : USER,
 			'time'       : TIME,
@@ -79,8 +93,8 @@ class MsgStore:
 		  friend: Friend object
 		  last_n: Last <n> messages
 		  msg_type: Select only messages with given type.
-			    Can either be 'f' for file messages,
-			    or 'm' for normal messages.
+			    Can either be T_FILEMSG for file messages,
+			    or T_CHATMSG for normal messages.
 		Return:
 		  List with messages
 		"""
@@ -147,8 +161,8 @@ class MsgStore:
 		given friend.
 		"""
 		if friend.name not in self.conversations:
-			db_path = path_join(self.path,
-					friend.name+".msg")
+			db_name = MsgStore.get_msgdb_name(friend.id)
+			db_path = path_join(self.path, db_name)
 			conv = MsgDB()
 			conv.open(db_path, self.account.pw)
 			self.conversations[friend.name] = conv
@@ -180,10 +194,10 @@ a message has been read by the user or not.
  | msg                                                          |
  +-----------+----------+-------+-----+-------+-------+---------+
  | _id       | _type    | _from | _to | _time | _msg  | _unseen |
- | INT (PK)  | CHAR(1)  | TEXT  | TEXT| TEXT  | TEXT  | INT     |
+ | INT (PK)  | INTEGER  | TEXT  | TEXT| TEXT  | TEXT  | INT     |
  +-----------+----------+-------+-----+-------+-------+---------+
 
-_type can be either 'm' for messages, 'f' for files.
+_type can be either Proto.T_CHATMSG or Proto.T_FILEMSG
 _unseen tells us if a message was seen by the receiver
 
 
@@ -195,7 +209,7 @@ _unseen tells us if a message was seen by the receiver
 +----------+---------+-----------+-------+-------+-------------+
 
 {
-  'type' : 'message',
+  'type' : Proto.T_CHATMSG,
   'from' : USER_NAME,
   'to'   : USER_NAME
   'time' : MSG_SENT_TIME,
@@ -203,7 +217,7 @@ _unseen tells us if a message was seen by the receiver
 }
 
 {
-  'type' :  'file-message'
+  'type' : Proto.T_FILEMSG,
   'from' : USER_NAME,
   'to'   : USER_NAME
   'time' : MSG_SENT_TIME,
@@ -223,7 +237,7 @@ class MsgDB:
 	CREATE_TABLE_MSG = \
 		'''CREATE TABLE IF NOT EXISTS msg (
 			_id INTEGER PRIMARY KEY,
-			_type CHAR(1),
+			_type INTEGER,
 			_from TEXT NOT NULL,
 			_to TEXT NOT NULL,
 			_time TEXT NOT NULL,
@@ -282,7 +296,7 @@ class MsgDB:
 		Args:
 		  msg:    Message dictionary
 		    Format: {
-			'type'       : 'message'|'file-message'
+			'type'       : T_CHATMSG|T_FILEMSG
 			'from'       : USER,
 			'to'         : USER,
 			'time'       : TIME,
@@ -302,20 +316,15 @@ class MsgDB:
 		if not self.db:
 			raise ValueError("MsgDB.add_msg: Database closed")
 
-		# To have less memory the database stores the message type
-		# as single char ('m':'message', 'f':'file-message')
-		typ = 'm' if msg['type'] == 'message' else 'f'
-
-
 		# Create entry in table 'msg'...
 		q  = "INSERT INTO msg (_type,_from,_to,_time,_msg,_unseen)"\
 			" VALUES (?, ?, ?, ?, ?, ?);"
-		self.db.execute(q, (typ, msg['from'], msg['to'],
+		self.db.execute(q, (msg['type'], msg['from'], msg['to'],
 				msg['time'], msg['msg'], msg['unseen']))
 		self.db.commit()
 
 
-		if typ == 'f':
+		if msg['type'] == Proto.T_FILEMSG:
 			# Message is 'file-message', create entry in
 			# table 'files'...
 			msgid = self.__get_last_msgid()
@@ -327,8 +336,6 @@ class MsgDB:
 					msg['key'],
 					msg['downloaded']))
 			self.db.commit()
-
-
 
 		self.last_action = time_now()
 
@@ -343,13 +350,13 @@ class MsgDB:
 			self.add_msg(msg)
 
 
-	def get_msgs(self, last_n=None, _type=None):
+	def get_msgs(self, last_n=None, pckt_type=None):
 		"""
 		Get last_n (if set) messages from message store.
 		Args:
-		  last_n: Last n messages (by time)
-		  _type: Select only messages with given type
-			('f' or 'm')
+		  last_n:    Last n messages (by time)
+		  pckt_type: Select only messages with given type
+			     Proto.T_CHATMSG or Proto.T_FILEMSG
 		Return:
 		  List with messages (dictionaries)
 		Throws:
@@ -361,9 +368,9 @@ class MsgDB:
 		self.last_action = time_now()
 		msgs = []
 
-		if _type:
+		if pckt_type:
 			q = "SELECT * FROM msg WHERE _type=? ORDER BY _time;"
-			result = self.db.execute(q, (_type,))
+			result = self.db.execute(q, (pckt_type,))
 		else:
 			q = "SELECT * FROM msg ORDER BY _time;"
 			result = self.db.execute(q)
@@ -371,9 +378,9 @@ class MsgDB:
 		for row in result:
 			msgid = row[0]
 
-			if row[1] == 'm':
+			if row[1] == Proto.T_CHATMSG:
 				msg = self.__row_to_msg(row)
-			elif row[1] == 'f':
+			elif row[1] == Proto.T_FILEMSG:
 				msg = self.__get_filemsg(row)
 			else:	continue
 			msgs.append(msg)
@@ -399,7 +406,8 @@ class MsgDB:
 		msgs = []
 
 		result = self.db.execute(
-			"SELECT * FROM msg WHERE _type='f';")
+			"SELECT * FROM msg WHERE _type={};"\
+			.format(Proto.T_FILEMSG))
 
 		for row in result:
 			msg = self.__get_filemsg(row, downloaded=0)
@@ -433,6 +441,8 @@ class MsgDB:
 	def set_file_downloaded(self, fileid):
 		"""
 		Set file to downloaded=1.
+		Args:
+		  fileid: FileID as string (len=32)
 		"""
 		q = "UPDATE files SET _downloaded=1 "\
 			"WHERE _fileid=?;"
@@ -450,7 +460,7 @@ class MsgDB:
 	def __row_to_msg(self, row):
 		# Convert row of table 'msg' to message dict
 		return {
-			'type'   : 'file-message' if row[1]=='f' else 'message',
+			'type'   : row[1],
 			'from'   : row[2],
 			'to'     : row[3],
 			'time'   : row[4],

@@ -2,27 +2,39 @@ import socket
 from ssl import SSLContext, PROTOCOL_TLS_SERVER, PROTOCOL_TLS_CLIENT
 import json
 import select
-import logging as LOG
+import logging
 from threading import Lock
 
-class TLSClient:
+from libretro.protocol import *
+
+LOG = logging.getLogger(__name__)
+
+class NetClient:
 	"""\
 	TLS Client
 	"""
 	def __init__(self, host='127.0.0.1', port=8443,
-			hostname=None,
-			cert_path='cert.pem'):
+			hostname=None, certpath=None):
 		self.host     = host
 		self.port     = port
 		self.hostname = hostname
-		self.certpath = cert_path
+		self.certpath = certpath
 
-		if not hostname:
-			self.hostname=host
+		self.conn     = None
+		self.ssl      = None
+		self.is_ssl   = certpath != None
 
-		self.ssl  = None
-		self.conn = None
 
+	def set_conn(self, conn, address):
+		"""\
+		Set connection and address
+		"""
+		self.conn = conn
+		self.host = address[0]
+		self.port = address[1]
+
+	def tostr(self):
+		return self.host + ":" + str(self.port)
 
 	def connect(self):
 		"""\
@@ -31,17 +43,19 @@ class TLSClient:
 		if self.conn:
 			return
 		try:
-			LOG.info("TLSClient: connecting to {}:{} ..."\
+			LOG.info("connecting to {}:{} ..."\
 				.format(self.host, self.port))
-			client = socket.create_connection((self.host,self.port))
+			conn = socket.create_connection((self.host,self.port))
 
-			self.ssl = SSLContext(PROTOCOL_TLS_CLIENT)
-			self.ssl.load_verify_locations(self.certpath)
-			self.conn = self.ssl.wrap_socket(client,
-				server_hostname=self.hostname)
+			if self.is_ssl:
+				self.ssl = SSLContext(PROTOCOL_TLS_CLIENT)
+				self.ssl.load_verify_locations(self.certpath)
+				self.conn = self.ssl.wrap_socket(conn,
+					server_hostname=self.hostname)
+			else:	self.conn = conn
 
 		except Exception as e:
-			LOG.error("TLSClient.connect: " + str(e))
+			LOG.error("connect: " + str(e))
 			raise #Exception("TLSClient.connect: " + str(e))
 
 
@@ -49,114 +63,116 @@ class TLSClient:
 		"""\
 		Send all data.
 		"""
-		if not self.conn: return
-		nsent = 0
-		while nsent < len(data):
-			n = self.conn.send(data[nsent:])
-			nsent += n
+#		nsent = 0
+#		while nsent < len(data):
+#			nsent += self.conn.send(data[nsent:])
+		self.conn.sendall(data)
+
+	def send_packet(self, pckt_type, *data):
+		"""\
+		Send packet.
+		Args:
+		  pckt_type: Type of packet (Proto.T_*)
+		  *data: Payload args
+		"""
+#		self.send(Proto.pack_packet(pckt_type, *data))
+		if data:
+			payload = b''.join(data)
+			hdr = Proto.pack_header(pckt_type, len(payload))
+			self.send(hdr)
+			self.send(payload)
+		else:
+			hdr = Proto.pack_header(pckt_type, 0)
+			self.send(hdr)
 
 
 	def recv(self, max_bytes=4096, timeout_sec=None):
 		"""\
 		Receive data
 		Return:
-		  Data: Received data
-		  None: Timeout
-		"""
-		if timeout_sec and not can_read(self.conn, timeout_sec):
-			return None
-		return self.conn.recv(max_bytes)
-
-
-	def send_dict(self, dct):
-		"""\
-		Send dictionary.
-		"""
-		if self.conn:
-			send_dictionary(self.conn, dct)
-
-
-	def recv_dict(self, force_keys=[], max_bytes=4096,
-			timeout_sec=None):
-		"""\
-		Receive dictionary
-		Return:
-		  Dict: Received dictionary
-		  None: Timeout
+		  Data:  Received data
+		  False: Timeout
 		Raises:
-		  TypeError, Exception
+		  if failed to receive/select
 		"""
-		return recv_dictionary(self.conn,
-				force_keys=force_keys,
-				max_bytes=max_bytes,
-				timeout_sec=timeout_sec)
+		if can_read(self.conn, timeout_sec):
+			return self.conn.recv(max_bytes)
+		else:	return False
+
+	def recv_all(self, n_bytes, timeout_sec=None):
+		"""\
+		Receive n bytes.
+		Return:
+		  Data:  Received data
+		  False: Timeout
+		Raises:
+		  if failed to receive/select
+		"""
+		nrecv = 0
+		data  = b''
+
+		while nrecv < n_bytes:
+			buf = self.recv(n_bytes-nrecv, timeout_sec)
+			if not buf: return buf
+
+			data += buf
+			nrecv += len(buf)
+
+#			print("recv_all: {}/{} byte".format(nrecv, n_bytes))
+
+		return data
+
+
+	def recv_packet(self, timeout_sec=None):
+		"""\
+		Receive packet.
+		Return:
+		  - On success, the packet type and payload will
+		    be returned ([0]: Packet type, [1]: Payload).
+		  - On timeout return value is False
+		  - On error None
+		Raises:
+		"""
+		try:
+			hdr = self.recv_all(8, timeout_sec)
+			if not hdr: return hdr
+		except Exception as e:
+			raise Exception("NetClient.recv_packet: "\
+				"Failed to recv header, "+str(e))
+
+		version,pckt_type,pckt_size = Proto.unpack_header(hdr)
+#		print("RECV header: t={} n={}".format(pckt_type, pckt_size))
+#		print("     bytes:  "+hdr.hex())
+
+		if version != RETRO_PROTOCOL_VERSION:
+			raise ValueError("Invalid protocol: "\
+				"{} != {}".format(version,
+				RETRO_PROTOCOL_VERSION))
+		data = None
+
+		if pckt_size > 0:
+			try:
+				data = self.recv_all(pckt_size,
+						timeout_sec)
+				if not data:
+					LOG.error("recv_packet: TIMEOUT")
+					return data
+
+#				print("     data:   "+data.hex())
+			except Exception as e:
+				raise Exception("NetClient.recv_packet: "\
+					"Failed to recv payload ({} byte),"\
+					" {}".format(pckt_size, e))
+		return pckt_type,data
+
 
 	def close(self):
 		"""\
-		Close ssl conn
+		Close connection.
 		"""
 		if self.conn:
 			self.conn.close()
 			self.conn = None
-
-#	def cipher(self):
-#		self.conn.cipher()
-
-
-def send_dictionary(conn, dct):
-	"""\
-	Send dictionary
-	"""
-	try:
-		data = json.dumps(dct)
-		LOG.debug("Send {}".format(data))
-		conn.sendall(data.encode())
-		return True
-	except Exception as e:
-		LOG.error("net.send_dictionary: " + str(e))
-		LOG.error("> Dict: [{}]".format(dct))
-		LOG.error("> Data: [{}]".format(data))
-		return False
-
-
-def recv_dictionary(conn, force_keys=[], max_bytes=4096,
-		timeout_sec=None):
-	"""\
-	Receive data and convert it to dictionary.
-	Args:
-	  conn:        SSL connection
-	  force_keys:  Keys in given list MUST exist in dict
-	  max_bytes:   Max size of recv buffer
-	  timeout_sec: Receive timeout in seconds (None=No timeout).
-	Return:
-	  Packet dictionary
-	  None: Timeout
-
-	Raises:
-	   Exception
-	"""
-	if timeout_sec and not can_read(conn, timeout_sec):
-		return None
-	try:
-		data = conn.recv(max_bytes).decode()
-		dct  = json.loads(data)
-		if type(dct) != dict:
-			LOG.error("Invalid msg "\
-				"format '{}'".format(data.decode()))
-			raise Exception("Invalid protocol '{}'".format(type(dct)))
-		for k in force_keys:
-			if k not in dct:
-				#LOG.warning("net.recv_dictionary: "\
-				#	"Missing key '{}' in packet dict".format(k))
-				raise Exception("Packet has no key '{}'".format(k))
-
-		LOG.debug("Recv {}".format(data))
-		return dct
-
-	except TypeError as te:
-		raise Exception(str(te))
-	except Exception as e:
-		raise Exception("Server closed connection")
 
 
 def can_read(conn, timeout_sec):
@@ -169,21 +185,20 @@ def can_read(conn, timeout_sec):
 	Return:
 	  True:  Data is awailable to receive
 	  False: Timeout exceeded
-	  None:  Select error
+	Raises:
+	  if select() failed
 	"""
-	try:
-		ready = select.select([conn], [],
-				[], timeout_sec)
-		if ready[0]:
-			return True
-		else:	return False
+	if not timeout_sec:
+		return True
 
-	except select.error as e:
-		LOG.error("libretro.net.can_read: "\
-			"select failed, " + str(e))
-		return None
-
-
+	ready = select.select([conn], [],
+			[], timeout_sec)
+	if ready[0]:
+		return True
+	else:	return False
+#	except Exception as e:
+#		LOG.error("can_read: select, "+str(e))
+#		return None
 
 class TCPSocket:
 	"""\

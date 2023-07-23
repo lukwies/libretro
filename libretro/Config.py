@@ -2,7 +2,7 @@ import configparser
 from os.path import join   as path_join
 from os.path import exists as path_exists
 from os.path import expanduser
-import logging as LOG
+import logging
 
 import traceback
 
@@ -12,6 +12,8 @@ Basic configs
 """
 
 RETRO_MAX_FILESIZE = 0x40000000
+
+LOG = logging.getLogger(__name__)
 
 class Config:
 	def __init__(self, basedir=None):
@@ -26,7 +28,7 @@ class Config:
 		self.download_dir = self.__get_download_dir()
 
 		# [default]
-		self.loglevel     = LOG.INFO
+		self.loglevel     = logging.INFO
 		self.logformat    = '%(levelname)s  %(message)s'
 		self.logfile      = path_join(self.basedir, 'log.txt')
 		self.recv_timeout = 5
@@ -116,10 +118,10 @@ class Config:
 			ValueError: If unsupported level string
 		"""
 		levels = {
-			'error'   : LOG.ERROR,
-			'warning' : LOG.WARNING,
-			'info'    : LOG.INFO,
-			'debug'   : LOG.DEBUG
+			'error'   : logging.ERROR,
+			'warning' : logging.WARNING,
+			'info'    : logging.INFO,
+			'debug'   : logging.DEBUG
 		}
 		levstr = loglevel_str.lower()
 		if levstr not in levels:

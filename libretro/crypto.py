@@ -207,16 +207,41 @@ class RetroPublicKey:
 		Args:
 		  path: Path to public keyfile
 		"""
+		key_file = open(path, "wb")
+		key_file.write(self.to_pem())
+#		key_file.write(srsa + b'\n' + sec)
+		key_file.close()
+		os_chmod(path, 0o600)
+
+
+	def to_pem(self):
+		"""\
+		Get keys as PEM strings.
+		Return:
+		  rsa-pem, ec-pem
+		"""
 		srsa = self.rsa.public_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PublicFormat.SubjectPublicKeyInfo)
 		sec = self.ec.public_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PublicFormat.SubjectPublicKeyInfo)
-		key_file = open(path, "wb")
-		key_file.write(srsa + b'\n' + sec)
-		key_file.close()
-		os_chmod(path, 0o600)
+		return srsa + b'\n' + sec
+
+
+	def to_der(self):
+		"""\
+		Get keys as DER buffer.
+		Return:
+		  rsa-der, ec-der
+		"""
+		srsa = self.rsa.public_bytes(
+			encoding=serialization.Encoding.DER,
+			format=serialization.PublicFormat.SubjectPublicKeyInfo)
+		sec = self.ec.public_bytes(
+			encoding=serialization.Encoding.DER,
+			format=serialization.PublicFormat.SubjectPublicKeyInfo)
+		return srsa,sec
 
 
 	def encrypt(self, data, encode_base64=False):
@@ -252,24 +277,6 @@ class RetroPublicKey:
 		except:
 			return False
 
-
-	def get_keyid(self):
-		"""\
-		Returns a 16-character-long id of this public retro key.
-		"""
-		rsabuf = self.rsa.public_bytes(
-			encoding=serialization.Encoding.DER,
-			format=serialization.PublicFormat.SubjectPublicKeyInfo)
-		ecbuf = self.ec.public_bytes(
-			encoding=serialization.Encoding.DER,
-			format=serialization.PublicFormat.SubjectPublicKeyInfo)
-
-		idbuf = hash_sha512(rsabuf+ecbuf, True)
-		keyid = ''
-		for i in range(0, len(idbuf), 8):
-			keyid += idbuf[i]
-
-		return keyid
 
 ########################################
 
@@ -416,5 +423,16 @@ def aes_decrypt_to_file(key, file_buf, filepath):
 
 #pk = k.get_public()
 
-#keyid = pk.get_keyid(True)
-#print(keyid)
+#r,e = pk.to_der()
+
+
+#pem = pk.to_pem().decode()
+#print(pem)
+#print(len(pem))
+
+#enc = pk.encrypt(b"Hello World")
+#print("RSA encrypt len: {}".format(len(enc)))
+
+#sig = k.sign(b"Hello World")
+#print("Signature len: {}".format(len(sig)))
+

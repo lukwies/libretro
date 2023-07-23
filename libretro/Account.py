@@ -2,16 +2,15 @@ from os.path import join as path_join
 from os.path import exists as path_exists
 from os.path import expanduser
 from os import listdir as os_listdir
-from os import mkdir as os_mkdir
-from shutil import copyfile as shutil_copyfile
-from time import strftime
-import logging as LOG
+from os import remove as os_remove
+import logging
 from getpass import getpass
 
 from libretro.Friend import Friend
 from libretro.FriendDb import FriendDb
 from libretro.crypto import RetroPrivateKey, RetroPublicKey
 
+LOG = logging.getLogger(__name__)
 
 """\
 The Account class holds all information about a (single) retro
@@ -35,7 +34,7 @@ user account.
 class Account:
 
 	def __init__(self, config):
-		"""
+		"""\
 		Init account.
 		Args:
 		  config:    Config instance
@@ -43,7 +42,7 @@ class Account:
 		  password:  Account password
 		"""
 		self.conf    = config
-		self.id      = None	# Account user ID
+		self.id      = None	# User ID (8 byte)
 		self.name    = None	# Username
 		self.pw      = None	# Password
 		self.path    = None	# Account path
@@ -71,6 +70,7 @@ class Account:
 
 		self.path = path_join(self.conf.accounts_dir, username)
 		if not path_exists(self.path):
+			# raise RetroAccountNotFound()
 			raise FileNotFoundError(
 				"Account.load: No such account '{}' at {}"\
 				.format(username, self.path))
@@ -111,9 +111,11 @@ class Account:
 			if not f.lower().endswith('.pem'):
 				continue
 
-			userid = f.rstrip('.pem')
+			useridx = f.rstrip('.pem')
+			userid  = bytes.fromhex(useridx)
+
 			if userid not in id2name:
-				LOG.error("No username for " + userid)
+				LOG.error("No username for " + useridx)
 				continue
 
 			# Resolve userid to username, load friend
@@ -126,25 +128,80 @@ class Account:
 			self.friends[friend.id] = friend
 
 
-	def add_friend(self, username, pubkey_path):
+	def add_friend(self, userid, username, pk_pembuf):
 		"""\
 		Add a new friend to this account.
-		- Copy given keyfile to accounts/USER/friends/USERID.pem
-		- Add entry to accounts/USER/friends/friends.db
-		- Add friend to self.friends
+
+		Args:
+		  userid:    New friends userid (8 byte)
+		  username:  Name of new friend (string)
+		  pk_pembuf: PEM buffer of friends pubkey (bytes)
+
+		Raises:
+		  Exception if:
+		  - failed to store public key
+		  - failed to load friend
+		  - failed to add entry to friendDb
 		"""
+		pk_path = path_join(self.path,
+			"friends/"+userid.hex()+".pem")
+
+		with open(pk_path, "wb") as f:
+			f.write(pk_pembuf)
+
 		friend = Friend()
-		friend.load(username, pubkey_path)
+		friend.load(username, pk_path)
 
-		dst = path_join(self.path, "friends/"+friend.id+".pem")
-		shutil_copyfile(pubkey_path, dst)
-
-		self.friendDb.add(friend.id, friend.name)
-		self.friends[friend.id] = friend
+		self.friendDb.add(userid, username)
+		self.friends[userid] = friend
 
 		LOG.info("Added new friend name={} id={}".format(
-			friend.name, friend.id))
+			friend.name, friend.id.hex()))
 
+
+	def add_friend_by_keyfile(self, username, pubkey_path):
+		"""\
+		Add a new friend to this account by providing
+		the new friends username and public key.
+
+		Args:
+		  username:    Name of new friend
+		  pubkey_path: Path to new friends public key
+
+		Raises:
+		  see self.add_friend()
+		"""
+		hexid   = path_basename(pubkey_path).replace('.pem', '')
+		userid  = Proto.hexstr_to_userid(hexid)
+		pem_buf = open(pubkey_path, 'rb').read()
+
+		self.add_friend(userid, username, pem_buf)
+
+
+	def delete_friend(self, userid):
+		"""\
+		Delete friend from account.
+		- Delete entry from friendDb
+		- Delete all messages
+		- Remove friends from self.friends
+		"""
+		if userid not in self.friends:
+			raise Exception("No such friend {}"\
+				.format(userid.hex()))
+
+		self.friendDb.delete_by_id(userid)
+		self.friends.pop(userid)
+
+		hexid  = userid.hex()
+		dbpath = path_join(self.path, "msg/"+hexid+".db")
+		pkpath = path_join(self.path, "friends/"+hexid+".pem")
+
+		try:
+			# Delete message database and public key
+			# of friend.
+			os_remove(dbpath)
+			os_remove(pkpath)
+		except:	pass
 
 	def get_friend_by_id(self, userid):
 		"""\
@@ -169,17 +226,26 @@ class Account:
 		# Load users private and public rsa/ed25519 keys
 		try:
 			kpath = path_join(self.path, "key.pem")
-			LOG.debug("Account.load: Load private key " + kpath)
+			LOG.debug("Load private key " + kpath)
 			self.key.load(kpath, self.pw)
 
+			pk_loaded = False
 			# Since we don't know the name of the public keyfile
 			# take the first '.pem' file that's not 'key.pem'.
+			# The name of that file also is the account id (in hex).
 			for f in os_listdir(self.path):
 				if f.endswith('.pem') and f != 'key.pem':
+
+					# Set account id
+					hexid = f.replace('.pem', '')
+					self.id = bytes.fromhex(hexid)
+
 					pkpath = path_join(self.path, f)
-					LOG.debug("Account.load: Load public key " + pkpath)
+					LOG.debug("Load public key " + pkpath)
 					self.pubkey.load(pkpath)
-					self.id = self.pubkey.get_keyid()
+					pk_loaded = True
+			if not pk_loaded:
+				raise FileNotFoundError("No pubkey found in "+self.path)
 
 		except FileNotFoundError as e:
 			raise FileNotFoundError("Account.load_keys: " + str(e))
@@ -274,107 +340,6 @@ def get_all_accounts(accounts_dir=None):
 		return accounts
 	except:	return None
 
-
-def create_new_account(accounts_dir=None):
-	"""\
-	Create a new retro account (locally).
-
-	1) Read username/password from user (stdin)
-	2) Create account directory ~/.retro/accounts/<username>/
-	3) Generate private/public keys (RSA, ED25519) and store them
-	4) Create some directories (friends, downloads, msg)
-
-	  ~/.retro/accounts/
-	     |__ <username>
-		  |__ key.pem
-		  |__ <userid>.pem
-		  |__ friends/
-		  |__ msg/
-
-	Args:
-	  accounts_dir: Directory where accounts are located
-			None? Use default path ~/.retro/accounts
-	Return:
-	  True on success, False on error
-
-	"""
-
-	# Read name from user and validate it
-	try:
-		username = input("Enter username: ")
-		if not username: return False
-		validate_username(username)
-	except ValueError as e:
-		print(str(e))
-		return False
-	except:
-		return False
-
-	# If no account dir is given, set to default
-	# ~/.retro/accounts
-	accdir = accounts_dir
-	if not accdir:
-		accdir = path_join(expanduser('~'),
-				'.retro/accounts')
-	userdir = path_join(accdir, username)
-
-	# Check if ~/.retro/accounts exists
-	if not path_exists(accdir):
-		print("! No such directory: " + accdir)
-		return False
-
-	# Check if given username already exists (locally)
-	if path_exists(userdir):
-		print("! Account '{}' already exists".format(username))
-		return False
-
-	try:
-		# Get account password
-		pw = getpass("Enter password: ")
-		if not pw: return False
-
-		# Validate password
-#TODO		validate_password(pw)
-
-		# Let user repeat password
-		pw2 = getpass("Repeat password: ")
-		if not pw2 or pw != pw2:
-			print("! Passwords mismatch")
-			return False
-	except Exception as e:
-		print(str(e))
-		return False
-
-	# Create account dir
-	os_mkdir(userdir)
-
-	# Generate RSA and ED25519 keypair and store all keys.
-	key = RetroPrivateKey()
-	key.gen()
-
-	path = path_join(userdir, 'key.pem')
-	key.save(path, pw)
-
-	pubkey = key.get_public()
-	pkid   = pubkey.get_keyid()
-	path   = path_join(userdir, pkid + '.pem')
-	pubkey.save(path)
-
-	# Create sub dirs ...
-	os_mkdir(path_join(userdir, 'friends'))
-	os_mkdir(path_join(userdir, 'msg'))
-
-
-	print("\nCreated new retro account!\n")
-	print(" Username: \033[1;33m" + username + "\033[0m")
-	print(" Location: " + userdir)
-	print()
-	print("Now send your retro public key ({}) to luken@gmx.net\n"\
-		"to finish the registration!\n".format(username+'.pem'))
-	print(" Public key: \033[1;33m" + path + "\033[0m")
-	print()
-
-	return True
 
 
 def chose_account_name(accounts_dir=None):

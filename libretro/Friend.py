@@ -1,9 +1,12 @@
 from os.path import basename as path_basename
 from os.path import join as path_join
 from os import listdir as os_listdir
-import logging as LOG
+import logging
 
 from libretro.crypto import RetroPublicKey
+
+
+LOG = logging.getLogger(__name__)
 
 """\
 A friend is another peer within the retro network,
@@ -54,7 +57,10 @@ class Friend:
 		"""
 		self.name = name
 		self.pubkey.load(path)
-		self.id = self.pubkey.get_keyid()
+
+		# Get friends userid from filename
+		hexid   = path_basename(path).replace('.pem', '')
+		self.id = bytes.fromhex(hexid)
 
 		LOG.debug("Loaded friend, name='{}' id={}"\
 			.format(self.name, self.id))

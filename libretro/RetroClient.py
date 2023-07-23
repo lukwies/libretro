@@ -1,15 +1,7 @@
-from os.path import exists as path_exists
-from os.path import join as path_join
-from os.path import expanduser
-from os import mkdir as os_mkdir
-from os import listdir as os_listdir
-from sys import exit as sys_exit
-from getpass import getpass
-import configparser as confparse
-import logging as LOG
-from base64 import b64encode
+import logging
 
-from libretro.net import TLSClient
+from libretro.protocol import *
+from libretro.net import NetClient
 from libretro.crypto import random_buffer
 
 from libretro.Config import Config
@@ -32,7 +24,7 @@ Requires the following directory tree:
           |__ friends/			# Friends directory
               |__ <userID1>.pem		# Pubkey of friend 1
               |__ <userID2>.pem		# Pubkey of friend 2
-
+	      |__ ...
 
 config-file (~/.retro/config.txt)
 	[server]
@@ -43,6 +35,7 @@ config-file (~/.retro/config.txt)
 
 """
 
+LOG = logging.getLogger()
 
 class RetroClient:
 
@@ -60,7 +53,9 @@ class RetroClient:
 	def load(self, username, password):
 		"""\
 		Load all settings.
+
 		NOTE: Call this before running any other functions.
+		NOTE: This will also setup the root logger.
 
 		1. Read base configs from ~/.retro/config.txt
 		2. Read account infos from ~/.retro/accounts/USER
@@ -72,16 +67,19 @@ class RetroClient:
 		self.conf.load()
 
 		# Init logging
-		if self.conf.logfile:
-			LOG.basicConfig(level=self.conf.loglevel,
-					format=self.conf.logformat,
-					filename=self.conf.logfile,
-					filemode='w',
-					encoding='utf-8')
-		else:
-			LOG.basicConfig(level=self.conf.loglevel,
-					format=self.conf.logformat)
+		fh = logging.FileHandler(self.conf.logfile, mode='w')
+		fh.setLevel(self.conf.loglevel)
 
+		formatter = logging.Formatter(
+				"%(asctime)s  %(levelname)s  "\
+				"%(name)s  %(message)s",
+				datefmt="%H:%M:%S")
+		fh.setFormatter(formatter)
+
+		LOG.setLevel(self.conf.loglevel)
+		LOG.addHandler(fh)
+
+		# Load account
 		self.load_account(username, password)
 
 
@@ -91,7 +89,7 @@ class RetroClient:
 		"""
 
 		# Setup TLS client
-		self.conn = TLSClient(
+		self.conn = NetClient(
 				self.conf.server_address,
 				self.conf.server_port,
 				self.conf.server_hostname,
@@ -119,45 +117,45 @@ class RetroClient:
 		# Create random nonce and sign it with our
 		# private key.
 		nonce = random_buffer(32)
-		sig   = self.account.key.sign(nonce, True)
+		signature = self.account.key.sign(nonce)
 
-		# Send the username to the server
-		self.conn.send_dict({
-			'type'  : 'login',
-			'user'  : self.account.id,
-			'nonce' : b64encode(nonce).decode(),
-			'sig'   : sig.decode()
-			})
+		try:
+			# Send T_HELLO packet
+			self.conn.send_packet(
+				Proto.T_HELLO,
+				self.account.id,
+				nonce,
+				signature)
 
-		# Receive encrypted random value
-		res = self.conn.recv_dict(['type'],
-			timeout_sec=self.conf.recv_timeout)
-		if res == None:
-			raise Exception("Receive timeout")
-		elif res['type'] == 'error':
-			raise Exception(res['msg'])
-		elif res['type'] != 'welcome':
-			raise Exception(
-				"Received invalid type '"+res['type']+"'")
+			# Receive encrypted random value
+			res = self.conn.recv_packet(
+				timeout_sec=self.conf.recv_timeout)
+		except: raise
+
+		if not res:
+			raise Exception("Timeout")
+		elif res[0] == Proto.T_ERROR:
+			raise Exception(res[1].decode())
+		elif res[0] != Proto.T_SUCCESS:
+			raise Exception("Invalid protocol "\
+				"type ({})".formt(res[0]))
 
 		LOG.info("Connected to {}:{}".format(self.conn.host,self.conn.port))
-		LOG.info(res['msg'])
 
 
 	def send(self, data):
-		return self.conn.send(data)
+		self.conn.send(data)
 
-	def send_dict(self, dct):
-		return self.conn.send_dict(dct)
+	def send_packet(self, pckt_type, *data):
+		self.conn.send_packet(pckt_type, *data)
 
 
 	def recv(self, recv_size=2048, timeout_sec=None):
 		return self.conn.recv(recv_size=recv_size,
 				timeout_sec=timeout_sec)
 
-	def recv_dict(self, keys=['type'], timeout_sec=None):
-		return self.conn.recv_dict(force_keys=keys,
-				timeout_sec=timeout_sec)
+	def recv_packet(self, timeout_sec=None):
+		return self.conn.recv_packet(timeout_sec=timeout_sec)
 
 
 	def close(self):
@@ -166,5 +164,5 @@ class RetroClient:
 
 	def get_hoststr(self):
 		# Get "hostname":"port"
-		return self.conn.host + ":" + str(self.conn.port)
+		return self.conn.tostr()
 
