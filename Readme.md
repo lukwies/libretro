@@ -20,7 +20,7 @@ $ pip uninstall libretro
 </pre>
 
 
-## Files
+## Modules
 <pre>
 Account.py         User account
 Config.py          Client configs
@@ -30,6 +30,7 @@ FriendDb.py        Encrypted sqlite3 db to resolve friendId's to names
 MsgHandler.py      Create/Decrypt end2end messages
 MsgStore.py        Message storage (encrypted sqlite)
 net.py             Network functions (TLS)
+RegKey.py          Registration key
 RetroClient.py     Central client context
 </pre>
 
@@ -42,27 +43,20 @@ from libretro.RetroClient import *
 retroClient = RetroClient()
 
 # Load client account
-if not retroClient.load(username, password):
-	return
+retroClient.load(username, password)
 
 # Connect to server
-try:
-	retroClient.connect()
-except Exception as e:
-	print(str(e))
-	return
+retroClient.connect()
 
 # Send some bytes
 retroClient.send(b'Hello World')
 
-# Receive a dictionary
-try:
-	recv_dict = retroClient.recv_dict(
-		keys=['baz','buz'],
-		timeout_sec=10)
-except Exception as e:
-	print(str(e))
-	return
+# Receive a packet
+pckt = retroClient.recv_packet()
+
+print("Packet Type: {}".format(pckt[1]))
+if pckt[1]:
+    print("Packet Data: " + pckt[1])
 
 # Close connection
 retroClient.close()
