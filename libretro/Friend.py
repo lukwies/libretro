@@ -63,5 +63,5 @@ class Friend:
 		self.id = bytes.fromhex(hexid)
 
 		LOG.debug("Loaded friend, name='{}' id={}"\
-			.format(self.name, self.id))
+			.format(self.name, self.id.hex()))
 

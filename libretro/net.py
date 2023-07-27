@@ -155,12 +155,11 @@ class NetClient:
 				data = self.recv_all(pckt_size,
 						timeout_sec)
 				if not data:
-					LOG.error("recv_packet: TIMEOUT")
+					LOG.debug("recv_packet: TIMEOUT")
 					return data
 
-#				print("     data:   "+data.hex())
 			except Exception as e:
-				raise Exception("NetClient.recv_packet: "\
+				raise Exception(
 					"Failed to recv payload ({} byte),"\
 					" {}".format(pckt_size, e))
 		return pckt_type,data

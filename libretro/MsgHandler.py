@@ -101,13 +101,6 @@ class MsgHandler:
 		# Create e2e packet buffer
 		e2e_buf = self.account.id + friend.id + \
 			  header + signature + enc
-#		e2e_msg = Proto.pack_packet(
-#			msg_type,
-#			self.account.id,
-#			friend.id,
-#			header,
-#			signature,
-#			enc)
 
 		# Create message dictionaries
 		msg = {
