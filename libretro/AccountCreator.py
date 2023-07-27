@@ -1,9 +1,8 @@
 from os.path import join as path_join
 from os.path import exists as path_exists
-from os.path import expanduser
 from os import mkdir as os_mkdir
-import logging
 from getpass import getpass
+import logging
 
 from libretro.protocol import *
 from libretro.Config import Config
@@ -13,7 +12,8 @@ from libretro.RegKey import RegKey
 
 
 """\
-Create and register a new retro account.
+Create and register a new retro account which can either be
+a normal user account or a bot account.
 
 1) Read registration key file
 2) Connect to server and send regkey
@@ -36,6 +36,7 @@ CLIENT                SERVER
   |<--- T_SUCCESS ------|
 
 
+# Account directory of normal users
 
   ~/.retro/accounts/
      |__ <username>/            # User directory
@@ -44,6 +45,15 @@ CLIENT                SERVER
         |__ msgs/		# Messages
         |__ friends/            # Friends
 
+# Account directory of bots
+ ... or ...
+
+  ~/.retro/bots/
+     |__ <botname>/            	# Bot directory
+        |__ key.pem             # Private keys
+        |__ <botid>.pem		# Public keys
+        |__ friends/            # Friends of bot
+
 """
 
 LOG = logging.getLogger(__name__)
@@ -51,39 +61,46 @@ LOG = logging.getLogger(__name__)
 class AccountCreator:
 
 	def __init__(self):
-		self.conf = Config()
-
-
-	def create_account(self, regkey_file):
 		"""\
-		Create and register new account.
+		Initialize AccountCreator.
+		"""
+		self.conf     = Config()
+		self.acc_path = self.conf.accounts_dir
 
-		1) Read regkey file
-		2) Connect to server and send regkey
-		3) if error quit, if success ...
-		4) Read username and password
-		5) Generate retro keys
-		6) Send public key to server
-		7) Create account dirtree
+
+	def create_account(self, regkey_file, is_bot=False,
+			validate_password=False):
+		"""\
+		Create and register new user or bot account.
 
 		Args:
-		  regkey_file: Path to registration
-			       keyfile.
+		  regkey_file: Path to registration keyfile.
+		  is_bot:      Account is bot?
+
 		Return:
 		  True on success, False on error
 		"""
+
+		if is_bot:
+			# If creating a bot account, the account
+			# path will be ~/.retro/bots/
+			self.acc_path = self.conf.bots_dir
+
+			# Create ~/.retro/bots if not exists
+			if not path_exists(self.acc_path):
+				os_mkdir(self.acc_path)
 
 		# Connect to server, send regkey and
 		# receive userid.
 		conn, userid = self.__handshake(regkey_file)
 		if not conn: return False
 
-		# Read username of new account from user
-		username = self.__read_username()
+		# Read user/botname from user
+		username = self.__read_username(is_bot)
 		if not username: return False
 
-		# Read password from user (twice)
-		password = self.__read_password()
+		# Read password from user (repeat)
+		password = self.__read_password(validate_password)
 		if not password: return False
 
 		# Generate retro keypair
@@ -98,18 +115,24 @@ class AccountCreator:
 
 		try:
 			# Create directories
-			apath = path_join(self.conf.accounts_dir, username)
-			os_mkdir(apath)
-			os_mkdir(path_join(apath, "msg"))
-			os_mkdir(path_join(apath, "friends"))
+			accpath = path_join(self.acc_path, username)
+			os_mkdir(accpath)
+
+			if not is_bot:
+				# The message directory is only for
+				# non-bot accounts.
+				os_mkdir(path_join(accpath, "msg"))
+
+			os_mkdir(path_join(accpath, "friends"))
 
 			# Save key pairs
-			key.save(path_join(apath, "key.pem"), password)
-			pubkey.save(path_join(apath, userid.hex()+".pem"))
+			key.save(path_join(accpath, "key.pem"), password)
+			pubkey.save(path_join(accpath, userid.hex()+".pem"))
 
-			print(". Created Account \033[1;33m{}\033[0m"\
-				.format(username))
+			print(". Created {}Account \033[1;33m{}\033[0m"\
+				.format("Bot " if is_bot else "", username))
 			return True
+
 		except Exception as e:
 			print("! create_account: "+str(e))
 			return False
@@ -178,16 +201,21 @@ class AccountCreator:
 		return None,None
 
 
-	def __read_username(self):
+	def __read_username(self, is_bot=False):
 		"""\
-		Read usernam from userinput.
-		This will also check if entered username already
-		exists.
+		Read user- or botname for userinput.
+		This will check if the account already exists.
+
+		Args:
+		  is_bot: Account is bot?
+
+		Return:
+		  True or False
 		"""
 		try:
-			username = input("Enter username: ")
+			prompt = "Enter botname: " if is_bot else "Enter username: "
+			username = input(prompt)
 			if not username: return None
-#			validate_username(username)
 		except KeyboardInterrupt:
 			print("\n! Abort")
 			return None
@@ -195,23 +223,44 @@ class AccountCreator:
 			print("! "+str(e))
 			return None
 
-		accpath = path_join(self.conf.accounts_dir,
-				username)
+		try:
+			# Validate username
+			AccountCreator.validate_username(username)
+		except Exception as e:
+			print("! " +str(e))
+			return None
+
+		accpath = path_join(self.acc_path, username)
 		if path_exists(accpath):
-			print("! You already have an account "\
-				"named '" + username + "'")
+			print("! Account {} already exists".format(username))
+			print("! Account-path: " + accpath)
 			return None
 
 		return username
 
 
-	def __read_password(self, secure=True):
+	def __read_password(self, validate=False):
+		"""\
+		Read password from userinput.
+		This will ask the user to enter the password twice
+		to avoid misstyping.
+
+		Args:
+		  validate: Validate if password is secure?
+		Return:
+		  The password on success, None on error
+		"""
 		try:
 			pw = getpass("Enter password: ")
 			if not pw: return None
 
-#			if secure:
-#				validate_password(pw)
+			# Validate if is secure password?
+			if secure:
+				try:
+					AccountCreator.validate_password(pw)
+				except Exception as e:
+					print("! "+str(e))
+					return None
 
 			pw2 = getpass("Repeat password: ")
 			if not pw2 or pw != pw2:
@@ -237,6 +286,13 @@ class AccountCreator:
 		"""\
 		Send public key to server and receive
 		either T_SUCCESS or T_ERROR.
+
+		Args:
+		  conn:   Connection
+		  pubkey: RetroPubliKey instance
+
+		Return:
+		  True or False
 		"""
 		conn.send_packet(Proto.T_PUBKEY,
 				pubkey.to_pem())
@@ -255,10 +311,68 @@ class AccountCreator:
 		return False
 
 
-#rk = RegKey()
-#rk.gen()
-#rk.write_file("regkey.txt")
+	@staticmethod
+	def validate_username(username, min_len=3, max_len=12):
+		"""\
+		Validates given username.
+		Raises:
+		  ValueError: On invalid format
+		"""
+		l = len(username)
+
+		if l < min_len or l > max_len:
+			# Length must be in min_len,max_len
+			raise ValueError("Username '{}' has "\
+				"invalid length {}".forat(
+				username, l))
+		elif not username.isalnum():
+			# Only alpha-numeric characters allowed
+			raise ValueError("Username '{}' contains "\
+				"invalid characters")
+		elif not username[0].isalpha():
+			# Name must start with alphabetic character
+			raise ValueError("Username must start with "\
+				"alphabetic character")
 
 
-#ac = AccountCreator()
-#ac.create_account("regkey.txt")
+	@staticmethod
+	def validate_password(password, min_length=8):
+		"""\
+		Validate if given password is secure.
+
+		>= 2 different lowercase charakters
+		>= 2 different uppercase charakters
+		>= 2 different numeric charakters
+		>= 2 different special charakters
+
+		Raises:
+		  ValuError if password isn't secure
+		"""
+		chars = {
+			'special'  : [],
+			'numeric'  : [],
+			'lowercase': [],
+			'uppercase': []
+		}
+
+		if len(password) < min_length:
+			raise ValueError("Password too short (min={})"\
+					.format(min_length))
+		for c in password:
+			if c.isalpha() and c.islower():
+				key = 'lowercase'
+			elif c.isalpha() and c.isupper():
+				key = 'uppercase'
+			elif c.isnumeric():
+				key = 'numeric'
+			else:
+				key = 'special'
+
+			if c not in chars[key]:
+				chars[key].append(c)
+
+		for k,v in chars.items():
+			if len(v) < 2:
+				raise ValueError("Password needs at "\
+					"least 2 different {} charakters"\
+					.format(k))
