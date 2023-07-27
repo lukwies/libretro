@@ -50,7 +50,7 @@ class RetroClient:
 		self.msgStore   = None	# Message storage
 
 
-	def load(self, username, password):
+	def load(self, username, password, is_bot=False):
 		"""\
 		Load all settings.
 
@@ -60,6 +60,11 @@ class RetroClient:
 		1. Read base configs from ~/.retro/config.txt
 		2. Read account infos from ~/.retro/accounts/USER
 
+		Args:
+		  username: Name of account user
+		  password: Account password
+		  is_bot:   Is bot account?
+
 		Raises:
 		  Exception: If failed to load config, account, ...
 		"""
@@ -67,7 +72,11 @@ class RetroClient:
 		self.conf.load()
 
 		# Init logging
-		fh = logging.FileHandler(self.conf.logfile, mode='w')
+		logfile = self.conf.logfile
+		if is_bot: logfile = logfile.replace('.txt', '.bot.txt')
+
+#		fh = logging.StreamHandler(sys.stdout)
+		fh = logging.FileHandler(logfile, mode='w')
 		fh.setLevel(self.conf.loglevel)
 
 		formatter = logging.Formatter(
@@ -80,10 +89,10 @@ class RetroClient:
 		LOG.addHandler(fh)
 
 		# Load account
-		self.load_account(username, password)
+		self.load_account(username, password, is_bot)
 
 
-	def load_account(self, username, password):
+	def load_account(self, username, password, is_bot=False):
 		"""\
 		(Re)load account
 		"""
@@ -97,7 +106,7 @@ class RetroClient:
 
 		# Load account settings, friends, ...
 		self.account = Account(self.conf)
-		self.account.load(username, password)
+		self.account.load(username, password, is_bot)
 
 		# connect everything
 		self.msgHandler = MsgHandler(self.account)
@@ -139,8 +148,6 @@ class RetroClient:
 		elif res[0] != Proto.T_SUCCESS:
 			raise Exception("Invalid protocol "\
 				"type ({})".formt(res[0]))
-
-		LOG.info("Connected to {}:{}".format(self.conn.host,self.conn.port))
 
 
 	def send(self, data):
