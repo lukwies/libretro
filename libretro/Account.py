@@ -42,6 +42,7 @@ class Account:
 		  password:  Account password
 		"""
 		self.conf    = config
+		self.is_bot  = False	# Is bot account?
 		self.id      = None	# User ID (8 byte)
 		self.name    = None	# Username
 		self.pw      = None	# Password
@@ -52,13 +53,14 @@ class Account:
 		self.friendDb = None	# See FriendDb
 
 
-	def load(self, username, password):
+	def load(self, username, password, is_bot=False):
 		"""\
 		Load account.
 
 		Args:
 		  username: Account's username
 		  password: Password for private key
+		  is_bot:   Account is a bot account
 
 		Return:
 		  True if successfully loaded, else False
@@ -68,15 +70,22 @@ class Account:
 		"""
 		LOG.info("Loading account '" + username +"' ...")
 
-		self.path = path_join(self.conf.accounts_dir, username)
+
+		# If account is a bot-account, it is stored
+		# at ~/.retro/bots/ otherwise at ~/.retro/accounts/
+		accdir = self.conf.bots_dir if is_bot \
+			 else self.conf.accounts_dir
+		self.path = path_join(accdir, username)
+
 		if not path_exists(self.path):
 			# raise RetroAccountNotFound()
 			raise FileNotFoundError(
 				"Account.load: No such account '{}' at {}"\
 				.format(username, self.path))
 
-		self.name = username
-		self.pw   = password
+		self.is_bot = is_bot
+		self.name   = username
+		self.pw     = password
 
 		# Load users private and public rsa/ed25519 keys
 		self.__load_keys()
@@ -253,76 +262,6 @@ class Account:
 			raise Exception("Account.load_keys: " + str(e))
 
 
-def validate_username(username):
-	"""\
-	Validates given username.
-	Raises:
-	  ValueError: On invalid format
-	"""
-	l = len(username)
-
-	# Length must be from 4 to 16.
-	if l < 4 or l > 16:
-		raise ValueError("Invalid username length ({}) "\
-			"min={} max={}".format(l, 4, 16))
-
-	# Name must start with alphabetic character
-	if not username[0].isalpha():
-		raise ValueError("Username must start with "\
-			"alphabetic character")
-
-	# Name must end with alphanumeric character
-	if not username[-1].isalnum():
-		raise ValueError("Username must end with "\
-			"alphanumeric character")
-
-	# All characters must be alphanumeric, '-' or '_'
-	for c in username:
-		if not c.isalnum() and c not in ('-', '_'):
-			raise ValueError("Invalid character '{}'"\
-				" in username '{}'".format(username, c))
-
-def validate_password(password, min_length=8):
-	"""\
-	Validate if given password is secure.
-
-	>= 2 different lowercase charakters
-	>= 2 different uppercase charakters
-	>= 2 different numeric charakters
-	>= 2 different special charakters
-
-	Raises:
-	  ValuError if password isn't secure
-	"""
-	chars = {
-		'special'  : [],
-		'numeric'  : [],
-		'lowercase': [],
-		'uppercase': []
-	}
-
-	if len(password) < min_length:
-		raise ValueError("Password too short (min={})"\
-				.format(min_length))
-	for c in password:
-		if c.isalpha() and c.islower():
-			key = 'lowercase'
-		elif c.isalpha() and c.isupper():
-			key = 'uppercase'
-		elif c.isnumeric():
-			key = 'numeric'
-		else:
-			key = 'special'
-
-		if c not in chars[key]:
-			chars[key].append(c)
-
-	for k,v in chars.items():
-		if len(v) < 2:
-			raise ValueError("Password needs at "\
-				"least 2 different {} charakters"\
-				.format(k))
-	return True
 
 
 def get_all_accounts(accounts_dir=None):
@@ -342,25 +281,27 @@ def get_all_accounts(accounts_dir=None):
 
 
 
-def chose_account_name(accounts_dir=None):
+def chose_account_name(is_bot=False):
 	"""\
-	Let user select account from list with all existing accounts.
+	Let user select (bot)account from list with all existing accounts.
 
 	If there's just a single account, return that account name.
 	If there are more than one account, print a list of all accounts
 	and let user select one of them.
 
 	Args:
-	  accounts_dir: Path to account directory
+	  is_bot: Account is bot account?
 	Return:
 	  The username of selected account
 	"""
 
-	if not accounts_dir:
-		accounts_dir = path_join(expanduser('~'),
+	if is_bot:
+		accdir = path_join(expanduser('~'),
+				'.retro/bots')
+	else:	accdir = path_join(expanduser('~'),
 				'.retro/accounts')
 
-	users = os_listdir(accounts_dir)
+	users = os_listdir(accdir)
 	if not users:
 		print("You don't have any accounts yet!")
 		return None
@@ -370,7 +311,9 @@ def chose_account_name(accounts_dir=None):
 		return users[0]
 	else:
 		# More than one account? Select one!
-		print("Select account\n")
+		if is_bot: print("Select bot\n")
+		else: print("Select account\n")
+
 		for i,u in enumerate(users):
 			print(" [{}] {}".format(i,u))
 		try:
