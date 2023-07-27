@@ -52,9 +52,9 @@ class Proto:
 	T_ERROR			= 2
 	T_HELLO			= 3
 	T_GOODBYE		= 4
-	T_REGISTER		= 4
-	T_PUBKEY		= 5
-	T_GET_PUBKEY		= 6
+	T_REGISTER		= 5
+	T_PUBKEY		= 6
+	T_GET_PUBKEY		= 7
 
 	T_CHATMSG		= 10
 	T_FILEMSG		= 11
@@ -199,7 +199,7 @@ class Proto:
 		Raises:
 		  ValueError: If given string has invalid format
 		"""
-		if len(hex_string) != 16:
+		if not hex_string or len(hex_string) != 16:
 			raise ValueError("Userid string has "\
 				"invalid length ({})"\
 				.format(len(hex_string)))
