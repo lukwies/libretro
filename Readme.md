@@ -19,7 +19,6 @@ $ pip install -e .
 $ pip uninstall libretro
 </pre>
 
-
 ## Modules
 <pre>
 Account.py         User account
@@ -31,33 +30,50 @@ MsgHandler.py      Create/Decrypt end2end messages
 MsgStore.py        Message storage (encrypted sqlite)
 net.py             Network functions (TLS)
 RegKey.py          Registration key
+RetroBot.py        Baseclass for creating bots
 RetroClient.py     Central client context
 </pre>
 
-## Example
+## Bot Example
+Writing an own retro bot is really straight forward.
+The only thing you need to do is to subclass `libretro.RetroBot`
+and overwrite the method `handle_message()`.
+
 <pre>
+from libretro.RetroBot import RetroBot
 
-from libretro.RetroClient import *
+class MyBot(libretro.RetroBot):
+        def __init__(self):
+                super().__init__()
+                ...
 
-# Create client context
-retroClient = RetroClient()
+        def handle_message(sender:Friend, text:str):
+                # Here we do override the method that
+                # is called after receiving a chatmsg.
+                # In this case simply send the message
+                # back to the sender...
+                self.send_msg(sender, text)
+</pre>
 
-# Load client account
-retroClient.load(username, password)
+A bot needs an account just like a 'normal' user.
+This is how to create one...
+<pre>
+bot = MyBot()
+bot.create_account(regkey_file)
+</pre>
 
-# Connect to server
-retroClient.connect()
+To load the bot account call
+<pre>
+bot.load(username, password)
+</pre>
 
-# Send some bytes
-retroClient.send(b'Hello World')
+Now, since the bot account is loaded you can either add
+a friend (communication partner) ...
+<pre>
+bot.add_friend(friend_name, friend_id)
+</pre>
 
-# Receive a packet
-pckt = retroClient.recv_packet()
-
-print("Packet Type: {}".format(pckt[1]))
-if pckt[1]:
-    print("Packet Data: " + pckt[1])
-
-# Close connection
-retroClient.close()
+... or run the bot's mainloop.
+<pre>
+bot.run()
 </pre>
