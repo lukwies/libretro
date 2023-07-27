@@ -25,6 +25,7 @@ class Config:
 		self.basedir      = basedir
 		self.config_file  = path_join(self.basedir, "config.txt")
 		self.accounts_dir = path_join(self.basedir, "accounts")
+		self.bots_dir     = path_join(self.basedir, "bots")
 		self.download_dir = self.__get_download_dir()
 
 		# [default]
