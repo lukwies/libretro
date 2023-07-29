@@ -45,6 +45,7 @@ from libretro.protocol import *
 from libretro.RetroClient import RetroClient
 from libretro.Account import get_all_accounts
 from libretro.AccountCreator import AccountCreator
+from libretro.FileTransfer import FileTransfer
 from libretro.Friend import Friend
 
 LOG = logging.getLogger(__name__)
@@ -59,7 +60,7 @@ class RetroBot:
 		self.username   = None		# Username
 		self.userid     = None		# User ID
 		self.connected  = False		# Are we connected ?
-		self.recvThread = None		# Receive thread
+		self.fileTrans  = FileTrans(self.cli) # FileTransfer
 		self.done       = True		# Done?
 
 
@@ -206,6 +207,17 @@ class RetroBot:
 		except Exception as e:
 			LOG.error("send_msg: "+str(e))
 
+
+	def send_file(self, friend:Friend, filepath:str):
+		"""\
+		Send file to given friend.
+		This will encrypt the file, upload it to the fileserver
+		and send a Proto.T_FILEMSG to given friend.
+
+		Raises:
+		  Exception
+		"""
+		self.fileTrans.upload_file(friend, filepath)
 
 
 	#-- PRIVATE --------------------------------------------------
