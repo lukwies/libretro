@@ -76,14 +76,17 @@ class MsgStore:
 			'key'        : ENCR_KEY,
 			'downloaded' : IS_DOWNLOADED
 		    }
+		Return:
+		  Id of message
+
 		Raises:
 		  Exception
 
 		"""
 		self._open_conversation(friend)
-		self.conversations[friend.name].add_msg(msg)
+		msgid = self.conversations[friend.name].add_msg(msg)
 		self._close_unused_conversations()
-
+		return msgid
 
 	def get_msgs(self, friend, last_n=None, msg_type=None):
 		"""
@@ -105,7 +108,7 @@ class MsgStore:
 		return msgs
 
 	def get_not_downloaded_files(self, friend, last_n=None):
-		"""
+		"""\
 		Get all messages containing files that aren't
 		downloaded yet.
 		Return:
@@ -117,6 +120,14 @@ class MsgStore:
 		self._close_unused_conversations()
 		return msgs
 
+	def delete_msg(self, friend, msgid):
+		"""\
+		Delete message with given id.
+		"""
+		self._open_conversation(friend)
+		self.conversations[friend.name]\
+				.delete_msg(msgid)
+		self._close_unused_conversations()
 
 	def set_all_seen(self, friend):
 		"""
@@ -144,7 +155,7 @@ class MsgStore:
 		return n
 
 
-	def set_file_downloaded(self, friend, fileid):
+	def set_file_downloaded(self, friend, fileid:str):
 		"""
 		Set state of file to downloaded
 		"""
@@ -210,6 +221,7 @@ _unseen tells us if a message was seen by the receiver
 
 {
   'type' : Proto.T_CHATMSG,
+  'id'   : MSG_ID,
   'from' : USER_NAME,
   'to'   : USER_NAME
   'time' : MSG_SENT_TIME,
@@ -218,6 +230,7 @@ _unseen tells us if a message was seen by the receiver
 
 {
   'type' : Proto.T_FILEMSG,
+  'id'   : MSG_ID,
   'from' : USER_NAME,
   'to'   : USER_NAME
   'time' : MSG_SENT_TIME,
@@ -309,6 +322,8 @@ class MsgDB:
 			'key'        : ENCR_KEY,
 			'downloaded' : IS_DOWNLOADED
 		    }
+		Return:
+		  Id of message (column '_id')
 
 		Raises:
 		  Exception
@@ -323,11 +338,12 @@ class MsgDB:
 				msg['time'], msg['msg'], msg['unseen']))
 		self.db.commit()
 
+		# Get id of this messge
+		msgid = self.get_last_msgid()
 
 		if msg['type'] == Proto.T_FILEMSG:
 			# Message is 'file-message', create entry in
 			# table 'files'...
-			msgid = self.__get_last_msgid()
 			q = "INSERT INTO files VALUES (?,?,?,?,?,?);"
 			self.db.execute(q, (msgid,
 					msg['fileid'],
@@ -338,7 +354,7 @@ class MsgDB:
 			self.db.commit()
 
 		self.last_action = time_now()
-
+		return msgid
 
 	def add_msgs(self, msgs):
 		"""
@@ -376,8 +392,6 @@ class MsgDB:
 			result = self.db.execute(q)
 
 		for row in result:
-			msgid = row[0]
-
 			if row[1] == Proto.T_CHATMSG:
 				msg = self.__row_to_msg(row)
 			elif row[1] == Proto.T_FILEMSG:
@@ -418,6 +432,24 @@ class MsgDB:
 		else:	return msgs
 
 
+	def delete_msg(self, msgid):
+		"""\
+		Delete message with given id.
+		If message is a file-message, entries from table
+		'files' will be deleted as well.
+		"""
+		msg = self.__get_msg_by_id(msgid)
+		if not msg: return False
+
+		q = "DELETE FROM msg WHERE _id=?"
+		self.db.execute(q, (msgid,))
+		self.db.commit()
+
+		if msg['type'] == Proto.T_FILEMSG:
+			q = "DELETE FROM files WHERE _msgid=?"
+			self.db.execute(q, (msgid,))
+			self.db.commit()
+
 
 	def set_all_seen(self):
 		"""
@@ -438,11 +470,11 @@ class MsgDB:
 		return res.fetchone()[0]
 
 
-	def set_file_downloaded(self, fileid):
+	def set_file_downloaded(self, fileid:str):
 		"""
 		Set file to downloaded=1.
 		Args:
-		  fileid: FileID as string (len=32)
+		  fileid: FileID as hex string (len=32)
 		"""
 		q = "UPDATE files SET _downloaded=1 "\
 			"WHERE _fileid=?;"
@@ -450,16 +482,34 @@ class MsgDB:
 		self.db.commit()
 
 
-	def __get_last_msgid(self):
-		# Get hightest message id
+	def get_last_msgid(self):
+		"""\
+		Get id of last inserted message.
+		"""
 		q = "SELECT max(_id) FROM msg;"
 		res = self.db.execute(q)
 		return int(res.fetchone()[0])
 
 
+	# ---- PRIVATE -------------------------------------------------
+
+	def __get_msg_by_id(self, msgid):
+		"""\
+		Get message by id.
+		Returns None if message not found.
+		"""
+		q = "SELECT * FROM msg WHERE _id=?"
+		res = self.db.execute(q, (msgid,))
+		if not res: return None
+		return self.__row_to_msg(res.fetchone())
+
 	def __row_to_msg(self, row):
-		# Convert row of table 'msg' to message dict
+		"""\
+		Convert given row (from table 'msg') to
+		a message dictionary.
+		"""
 		return {
+			'id'	 : row[0],
 			'type'   : row[1],
 			'from'   : row[2],
 			'to'     : row[3],
@@ -469,16 +519,19 @@ class MsgDB:
 
 
 	def __get_filemsg(self, msg_row, downloaded=None):
-		# Build file-message from row of table 'msg'
-		# and selected file infos from table 'files'.
-		# Args:
-		#   msg_row:
-		#   downloaded: None    = Don't care
-		#		0|False = Only not downloaded
-		#		1|True  = Only downloaded
-		# Return:
-		#  Message with type 'file-message' or
-		#  None on error or missing data.
+		"""\
+		Build file-message from row of table 'msg'
+		and selected file infos from table 'files'.
+		Args:
+		  msg_row:
+		  downloaded:
+			None    = Don't care
+			0|False = Only not downloaded
+			1|True  = Only downloaded
+		Return:
+		  Message with type 'file-message' or
+		  None on error or missing data.
+		"""
 		q = "SELECT * FROM files WHERE _msgid=?"
 		if downloaded != None:
 			q += " AND _downloaded={}".format(downloaded)
@@ -493,20 +546,3 @@ class MsgDB:
 			msg['downloaded'] = file_row[5]
 			return msg
 		return None
-"""
-
-msg = {
-	'from' : 'r2d2',
-	'to': 'peilnix',
-	'time' : '2023-1-23 20:23',
-	'msg' : 'Hello World'
-}
-
-db = MsgStore()
-if db.open("test.db", "password"):
-	db.add_msg(msg)
-
-	msgs = db.get_msgs()
-	print(msgs)
-	db.close()
-"""
