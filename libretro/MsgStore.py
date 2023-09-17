@@ -17,7 +17,6 @@ be closed if no selects/inserts applied in a certain timeinterval.
 
 Each of these conversations is identified by the friends name ID.
 All message db's are located at ~/.retro/accounts/<USER>/msg/
-
 """
 class MsgStore:
 
@@ -69,7 +68,7 @@ class MsgStore:
 			'time'       : TIME,
 			'msg'        : MESSAGE,
 			'unseen'     : 0|1
-			# Only if type = 'file-message'
+			# Only if type = T_FILEMSG
 			'fileid'     : FILE_ID,
 			'filename'   : FILE_NAME,
 			'size'       : FILE_SIZE,
@@ -104,19 +103,6 @@ class MsgStore:
 		self._open_conversation(friend)
 		msgs = self.conversations[friend.name]\
 				.get_msgs(last_n, msg_type)
-		self._close_unused_conversations()
-		return msgs
-
-	def get_not_downloaded_files(self, friend, last_n=None):
-		"""\
-		Get all messages containing files that aren't
-		downloaded yet.
-		Return:
-		  List with messages
-		"""
-		self._open_conversation(friend)
-		msgs = self.conversations[friend.name]\
-				.get_not_downloaded_files(last_n)
 		self._close_unused_conversations()
 		return msgs
 
@@ -240,9 +226,7 @@ _unseen tells us if a message was seen by the receiver
   'size' : FILE_SIZE,
   'key' : base64(KEY),
   'downloaded' : True|False
-  }
 }
-
 
 """
 class MsgDB:
@@ -315,7 +299,7 @@ class MsgDB:
 			'time'       : TIME,
 			'msg'        : MESSAGE,
 			'unseen'     : 0|1
-			# Only if type = 'file-message'
+			# Only if type = T_FILEMSG
 			'fileid'     : FILE_ID,
 			'filename'   : FILE_NAME,
 			'size'       : FILE_SIZE,
@@ -355,6 +339,7 @@ class MsgDB:
 
 		self.last_action = time_now()
 		return msgid
+
 
 	def add_msgs(self, msgs):
 		"""
@@ -404,34 +389,6 @@ class MsgDB:
 		else:	return msgs
 
 
-
-	def get_not_downloaded_files(self, last_n=None):
-		"""
-		Get all file messages containing not downloaded
-		files.
-		Return:
-		  List with messsages
-		"""
-		if not self.db:
-			raise Exception("MsgStore: Database "\
-					"is closed!")
-
-		self.last_action = time_now()
-		msgs = []
-
-		result = self.db.execute(
-			"SELECT * FROM msg WHERE _type={};"\
-			.format(Proto.T_FILEMSG))
-
-		for row in result:
-			msg = self.__get_filemsg(row, downloaded=0)
-			if msg: msgs.append(msg)
-
-		if last_n != None:
-			return msgs[-last_n:]
-		else:	return msgs
-
-
 	def delete_msg(self, msgid):
 		"""\
 		Delete message with given id.
@@ -441,14 +398,14 @@ class MsgDB:
 		msg = self.__get_msg_by_id(msgid)
 		if not msg: return False
 
-		q = "DELETE FROM msg WHERE _id=?"
-		self.db.execute(q, (msgid,))
-		self.db.commit()
-
 		if msg['type'] == Proto.T_FILEMSG:
 			q = "DELETE FROM files WHERE _msgid=?"
 			self.db.execute(q, (msgid,))
 			self.db.commit()
+
+		q = "DELETE FROM msg WHERE _id=?"
+		self.db.execute(q, (msgid,))
+		self.db.commit()
 
 
 	def set_all_seen(self):
