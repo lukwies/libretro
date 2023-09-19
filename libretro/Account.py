@@ -3,6 +3,8 @@ from os.path import exists as path_exists
 from os.path import expanduser
 from os import listdir as os_listdir
 from os import remove as os_remove
+from os import mkdir as os_mkdir
+
 import logging
 from getpass import getpass
 
@@ -16,15 +18,21 @@ LOG = logging.getLogger(__name__)
 The Account class holds all information about a (single) retro
 user account.
 
+Each account is identified by a unique 8 byte userid, created
+while account registration.
+
+Files:
+
   ~/.retro/accounts/
   |__ <user-1>/                      # User directory
   |    |__ key.pem                   # Private keys
   |    |__ <username>.pem            # Public keys
   |    |__ downloads/
-  |    |__ msgs/
   |    |__ friends/                  # Friends directory
-  |        |__ alice.pem             # Pubkeys of friend 1
-  |        |__ bob.pem               # Pubkeys of friend 2
+  |        |__ friends.db            # Friends database
+  |        |__ msg/	             # Dir with msgdbs
+  |            |__ <friend1msgdb>    # Msg database file 1
+  |            |__ ...
   |
   |__ <user-2>/
       |__ key.pem
@@ -38,24 +46,23 @@ class Account:
 		Init account.
 		Args:
 		  config:    Config instance
-		  username:  Username of account
-		  password:  Account password
 		"""
-		self.conf    = config
-		self.is_bot  = False	# Is bot account?
-		self.id      = None	# User ID (8 byte)
-		self.name    = None	# Username
-		self.pw      = None	# Password
-		self.path    = None	# Account path
-		self.key     = RetroPrivateKey()
-		self.pubkey  = RetroPublicKey()
-		self.friends = {}	# Key=userID, Value=Friend
-		self.friendDb = None	# See FriendDb
+		self.conf      = config	# Config context
+		self.is_bot    = False	# Is bot account?
+		self.id        = None	# User ID (8 byte)
+		self.name      = None	# Username
+		self.pw        = None	# Password
+		self.path      = None	# Account path
+		self.key       = RetroPrivateKey()
+		self.pubkey    = RetroPublicKey()
+		self.frienddir = None	# Friends directory
+		self.friendDb  = None	# See FriendDb
+		self.friends   = {}	# Key=userID, Value=Friend
 
 
 	def load(self, username, password, is_bot=False):
 		"""\
-		Load account.
+		Load user account.
 
 		Args:
 		  username: Account's username
@@ -69,7 +76,6 @@ class Account:
 		  FileNotFoundError, Exception
 		"""
 		LOG.info("Loading account '" + username +"' ...")
-
 
 		# If account is a bot-account, it is stored
 		# at ~/.retro/bots/ otherwise at ~/.retro/accounts/
@@ -90,9 +96,11 @@ class Account:
 		# Load users private and public rsa/ed25519 keys
 		self.__load_keys()
 
+		self.frienddir = path_join(self.path, "friends")
+
 		# Create frienddb for resolving userids to usernames
-		friendDbPath  = path_join(self.path, "friends/friends.db")
-		self.friendDb = FriendDb(friendDbPath, password)
+		dbpath  = path_join(self.frienddir, "friends.db")
+		self.friendDb = FriendDb(dbpath, password)
 
 		# Load all friends of this account
 		self.load_friends()
@@ -100,41 +108,10 @@ class Account:
 
 	def load_friends(self):
 		"""\
-		Load all friends of this account.
-		1) Load userid/username dict from FriendDb
-		   at accounts/USER/friends/friends.db
-		2) Read all friends public keys from
-		   accounts/USER/friends/*.pem
-		3) Create dictionary with all friends where
-		   the key is the friends userid and the value
-		   the Friend object.
+		Load all friends of this account from the friends
+		sqlite database (see FriendDb.py).
 		"""
-
-		id2name      = self.friendDb.get_all()
-		friends_dir  = path_join(self.path, "friends")
-		self.friends = {}
-
-		LOG.debug("Looking for friends at " + friends_dir + " ...")
-
-		for f in os_listdir(friends_dir):
-			if not f.lower().endswith('.pem'):
-				continue
-
-			useridx = f.rstrip('.pem')
-			userid  = bytes.fromhex(useridx)
-
-			if userid not in id2name:
-				LOG.error("No username for " + useridx)
-				continue
-
-			# Resolve userid to username, load friend
-			# and add to self.friends dict.
-			username = id2name[userid]
-			friend   = Friend()
-			friend.load(
-				id2name[userid],
-				path_join(friends_dir, f))
-			self.friends[friend.id] = friend
+		self.friends = self.friendDb.load_all()
 
 
 	def add_friend(self, userid, username, pk_pembuf):
@@ -148,43 +125,20 @@ class Account:
 
 		Raises:
 		  Exception if:
-		  - failed to store public key
-		  - failed to load friend
+		  - Invalid pubkey format
 		  - failed to add entry to friendDb
 		"""
-		pk_path = path_join(self.path,
-			"friends/"+userid.hex()+".pem")
-
-		with open(pk_path, "wb") as f:
-			f.write(pk_pembuf)
-
 		friend = Friend()
-		friend.load(username, pk_path)
+		friend.id = userid
+		friend.name = username
+		friend.msgdbname = FriendDb.get_random_dbname(
+					self.frienddir)
 
-		self.friendDb.add(userid, username)
-		self.friends[userid] = friend
+		LOG.debug("LOAD PUBKEY FROM PEM BUF\n{}\n".format(pk_pembuf))
+		friend.pubkey.load_string(pk_pembuf.decode())
 
-		LOG.info("Added new friend name={} id={}".format(
-			friend.name, friend.id.hex()))
-
-
-	def add_friend_by_keyfile(self, username, pubkey_path):
-		"""\
-		Add a new friend to this account by providing
-		the new friends username and public key.
-
-		Args:
-		  username:    Name of new friend
-		  pubkey_path: Path to new friends public key
-
-		Raises:
-		  see self.add_friend()
-		"""
-		hexid   = path_basename(pubkey_path).replace('.pem', '')
-		userid  = Proto.hexstr_to_userid(hexid)
-		pem_buf = open(pubkey_path, 'rb').read()
-
-		self.add_friend(userid, username, pem_buf)
+		self.friendDb.add(friend)
+		self.friends[friend.id] = friend
 
 
 	def delete_friend(self, userid):
@@ -198,19 +152,20 @@ class Account:
 			raise Exception("No such friend {}"\
 				.format(userid.hex()))
 
-		self.friendDb.delete_by_id(userid)
+		friend = self.friends[userid]
+
+		self.friendDb.delete_by_id(friend.id)
+
+		dbpath = path_join(
+			path_join(self.frienddir, "msg"),
+			friend.msgdbname)
+
+		# Msg database might not exist
+		try:	os_remove(dbpath)
+		except:	pass
+
 		self.friends.pop(userid)
 
-		hexid  = userid.hex()
-		dbpath = path_join(self.path, "msg/"+hexid+".db")
-		pkpath = path_join(self.path, "friends/"+hexid+".pem")
-
-		try:
-			# Delete message database and public key
-			# of friend.
-			os_remove(dbpath)
-			os_remove(pkpath)
-		except:	pass
 
 	def get_friend_by_id(self, userid):
 		"""\
@@ -251,7 +206,7 @@ class Account:
 
 					pkpath = path_join(self.path, f)
 					LOG.debug("Load public key " + pkpath)
-					self.pubkey.load(pkpath)
+					self.pubkey.load_file(pkpath)
 					pk_loaded = True
 			if not pk_loaded:
 				raise FileNotFoundError("No pubkey found in "+self.path)
@@ -261,7 +216,22 @@ class Account:
 		except Exception as e:
 			raise Exception("Account.load_keys: " + str(e))
 
+	# TODO
+	"""
+	def __load_account_config(self):
+		try:
+			confpath = path_join(self.path, "config.txt")
+			conf = configparser.ConfigParser()
+			conf.read(confpath)
 
+			self.name = conf.get("Account", "username")
+			self.idx  = conf.get("Account", "userid")
+			self.id   = bytes.fromhex(self.useridx)
+		except configparser.NoOptionError as e:
+			raise Exception("Load account config, "+str(e))
+		except:
+			raise
+	"""
 
 
 def get_all_accounts(accounts_dir=None):

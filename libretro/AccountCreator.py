@@ -118,12 +118,14 @@ class AccountCreator:
 			accpath = path_join(self.acc_path, username)
 			os_mkdir(accpath)
 
-			if not is_bot:
+#			if not is_bot:
 				# The message directory is only for
 				# non-bot accounts.
-				os_mkdir(path_join(accpath, "msg"))
+#				os_mkdir(path_join(accpath, "msg"))
 
-			os_mkdir(path_join(accpath, "friends"))
+			frdir = path_join(accpath, "friends")
+			os_mkdir(frdir)
+			os_mkdir(path_join(frdir, "msg"))
 
 			# Save key pairs
 			key.save(path_join(accpath, "key.pem"), password)

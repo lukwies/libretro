@@ -158,8 +158,11 @@ class MsgStore:
 		given friend.
 		"""
 		if friend.name not in self.conversations:
-			db_name = MsgStore.get_msgdb_name(friend.id)
-			db_path = path_join(self.path, db_name)
+			db_path = path_join(
+				path_join(self.account.frienddir,"msg"),
+				friend.msgdbname)
+#			db_name = MsgStore.get_msgdb_name(friend.id)
+#			db_path = path_join(self.path, db_name)
 			conv = MsgDB()
 			conv.open(db_path, self.account.pw)
 			self.conversations[friend.name] = conv

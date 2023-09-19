@@ -1,23 +1,35 @@
 from os.path import join as path_join
+from os.path import exists as path_exists
 from os.path import basename as path_basename
 import logging
 from sqlcipher3 import dbapi2 as sqlcipher
 from time import time as time_now
 
-from libretro.crypto import hash_sha256
+from libretro.Friend import Friend
+from libretro.crypto import hash_sha256, random_buffer
 
 LOG = logging.getLogger(__name__)
 
 """
-This database is made to resolve a friend's userid to its
-username. It just contains a single table:
+This database stores all friend informations.
 
- +--------------------+
- | friends            |
- +-----------+--------+
- | _id       | _name  |
- | BLOB (PK) | TEXT   |
- +-----------+--------+
+ +-----------------------------------------------+
+ | friends            		                 |
+ +-----------+--------+------+------+------------+
+ | _id       | _name  | _rsa | _ec  | _msgdbname |
+ | BLOB (PK) | TEXT   | TEXT | TEXT | TEXT       |
+ +-----------+--------+------+------+------------+
+
+ _id        -  A friends ID (8 byte)
+ _name      - Username of friend
+ _rsa       - Public RSA key of friend
+ _ec        - Public ED25519 key of friend
+ _msgdbname - The name of the sqlite database where
+              all messages of the conversation with
+	      a friend are stored.
+
+ NOTE: Public keys are stored as PEM-strings including
+       prefix and suffix ("------ BEGIN ...", "----- END ..")
 
 """
 class FriendDb:
@@ -25,7 +37,26 @@ class FriendDb:
 	CREATE_TABLE_FRIENDS = \
 		'''CREATE TABLE IF NOT EXISTS friends (
 			_id BLOB UNIQUE NOT NULL,
-			_name TEXT NOT NULL)'''
+			_name TEXT NOT NULL,
+			_rsa TEXT NOT NULL,
+			_ec TEXT NOT NULL,
+			_msgdbname TEXT NOT NULL)'''
+
+	@staticmethod
+	def get_random_dbname(friends_dir):
+		"""\
+		Get a random (not existing) filename for
+		a message database.
+		Return:
+		   filename,filepath
+		"""
+		msgdir = path_join(friends_dir, "msg")
+		while True:
+			filename = random_buffer(16, True)
+			filepath = path_join(msgdir, filename)
+			if not path_exists(filepath):
+				return filename
+
 
 	def __init__(self, path, password):
 		"""
@@ -35,14 +66,16 @@ class FriendDb:
 		self.key  = hash_sha256(password.encode(), True)
 
 
-	def add(self, userid, username):
+	def add(self, friend):
 		"""\
 		Add friend to database.
 		"""
 		db = self.__open()
+		rsapem,ecpem = friend.pubkey.get_pem()
 		db.execute(
-			"INSERT INTO friends VALUES (?, ?)",
-			(userid, username))
+			"INSERT INTO friends VALUES (?,?,?,?,?)",
+			(friend.id, friend.name, rsapem,
+			ecpem, friend.msgdbname))
 		db.commit()
 		db.close()
 
@@ -56,21 +89,30 @@ class FriendDb:
 		db.commit()
 		db.close()
 
-	def get_all(self):
+
+	def load_all(self):
 		"""\
-		Get all entries from table 'friends' and return them
-		as a dictionary, where key is the userid and value
-		the username.
+		Loads all friends from the database and return
+		a dictionary where ids are the friendids and
+		values are Friend instances.
 		"""
 		db  = self.__open()
-		all = {}
-		q   = "SELECT * FROM friends"
+		friends = {}
+		q = "SELECT * FROM friends"
 
 		for row in db.execute(q):
-			all[row[0]] = row[1]
+			LOG.debug("Loading friend '"+row[1]+"' ...")
+			LOG.debug("Row len: {}".format(len(row)))
+			LOG.debug("DB ROW: [\n"+row[2]+"\n]\n")
+			friend = Friend()
+			friend.id = row[0]
+			friend.name = row[1]
+			friend.pubkey.load_strings(row[2], row[3])
+			friend.msgdbname = row[4]
+			friends[friend.id] = friend
 
 		db.close()
-		return all
+		return friends
 
 
 	def get_id(self, username):

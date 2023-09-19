@@ -12,17 +12,15 @@ LOG = logging.getLogger(__name__)
 A friend is another peer within the retro network,
 of whom we already know the public-key and username.
 
-Friend information is stored as follows:
+All friend information is stored in an encryted sqlite
+database (FriendDB.py).
 
+Files:
   ~/.retro/accounts/<username>/friends/
-     |__ <friendID-1>.pem
-     |__ <friendID-2>.pem
-     |__ ...
-
-  ~/.retro/accounts/<username>/msg/
-     |__ <friendID-1>.db
-     |__ <friendID-2>.db
-     |__ ...
+     |__ friend.db
+     |__ msg/
+         |__ <friend1dbname>
+	 |__ ...
 
 """
 class Friend:
@@ -38,6 +36,8 @@ class Friend:
 		self.name   = None	# Friends username
 		self.pubkey = RetroPublicKey() # Friends pubkey
 
+		self.msgdbname = None	# Name of msgdb file
+
 		# Current friend status (OFFLINE,ONLINE,UNKNONW)
 		self.status = Friend.OFFLINE
 
@@ -45,7 +45,7 @@ class Friend:
 		# For gui purpose only..
 		self.unseen_msgs = 0
 
-
+	'''
 	def load(self, name, path):
 		"""\
 		Load friends public key from given path and
@@ -64,4 +64,20 @@ class Friend:
 
 		LOG.debug("Loaded friend, name='{}' id={}"\
 			.format(self.name, self.id.hex()))
+	'''
 
+	""" TODO
+	def load2(self, userid, username, path):
+		self.id   = userid
+		self.name = username
+		self.path = path
+
+		self.pubkey.load(
+			path_join(path, "key.pem"))
+
+		LOG.debug("Loaded friend, name='{}' id={}"\
+			.format(self.name, self.id.hex()))
+
+	def get_msgdb_path(self):
+		return path_join(self.path, "msg.db")
+	"""
