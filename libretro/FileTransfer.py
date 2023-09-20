@@ -85,7 +85,7 @@ class FileTransfer:
 			fileid   = self.__get_fileid(filename)
 		except Exception as e:
 			LOG.error("upload: "+str(e))
-			raise Exception("FileUpload: "+str(e))
+			raise
 
 		# Encrypt/compress file
 		try:
@@ -109,6 +109,7 @@ class FileTransfer:
 
 		self.__recv_ok(conn)
 		conn.close()
+		LOG.debug("Uploaded file "+filepath)
 
 		# Send file-message to user
 		file_dict = {
@@ -120,6 +121,7 @@ class FileTransfer:
 		msg,e2e_buffer = self.cli.msgHandler.make_file_msg(
 					friend,	file_dict)
 		self.cli.send_packet(Proto.T_FILEMSG, e2e_buffer)
+		LOG.debug("Sent filemsg to "+friend.name)
 
 		return filename,filesize
 
@@ -205,11 +207,10 @@ class FileTransfer:
 		try:
 			pckt = conn.recv_packet(timeout_sec=10)
 			if not pckt:
-				raise Exception("FileServer: timeout")
+				raise Exception("timeout")
 
 			elif pckt[0] == Proto.T_ERROR:
-				raise Exception("FileServer: "\
-					+ pckt[1].decode())
+				raise Exception(pckt[1].decode())
 
 			elif pckt[0] != Proto.T_SUCCESS:
 				raise Exception("FileTransfer: "\
@@ -218,7 +219,7 @@ class FileTransfer:
 			else:
 				return pckt
 		except Exception as e:
-			raise Exception("FileServer: " + str(e))
+			raise
 
 
 

@@ -14,24 +14,17 @@ from libretro.MsgStore import MsgStore
 Requires the following directory tree:
 
 ~/.retro/
-  |__ config.txt			# Base config (server settings)
+  |__ config.txt			# Base config (see Config.py)
   |__ server-cert.pem			# Server certificate
   |__ accounts/				# All accounts
       |__ <username>/			# User directory
           |__ key.pem			# Private key
           |__ <userID>.pem		# Public key
-	  |
+	  |__ msgs/			# Conversations dir
           |__ friends/			# Friends directory
               |__ <userID1>.pem		# Pubkey of friend 1
               |__ <userID2>.pem		# Pubkey of friend 2
 	      |__ ...
-
-config-file (~/.retro/config.txt)
-	[server]
-	address = ADDRESS
-	port = PORT
-	certificate = PATH
-	hostname = STRING
 
 """
 
@@ -58,7 +51,7 @@ class RetroClient:
 		NOTE: This will also setup the root logger.
 
 		1. Read base configs from ~/.retro/config.txt
-		2. Read account infos from ~/.retro/accounts/USER
+		2. Read account infos from ~/.retro/accounts/<username>
 
 		Args:
 		  username: Name of account user

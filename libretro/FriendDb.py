@@ -1,9 +1,7 @@
 from os.path import join as path_join
 from os.path import exists as path_exists
-from os.path import basename as path_basename
 import logging
 from sqlcipher3 import dbapi2 as sqlcipher
-from time import time as time_now
 
 from libretro.Friend import Friend
 from libretro.crypto import hash_sha256, random_buffer
@@ -12,6 +10,7 @@ LOG = logging.getLogger(__name__)
 
 """
 This database stores all friend informations.
+It is located at ~/.retro/accounts/$USER/friends/friend.db
 
  +-----------------------------------------------+
  | friends            		                 |
@@ -71,7 +70,7 @@ class FriendDb:
 		Add friend to database.
 		"""
 		db = self.__open()
-		rsapem,ecpem = friend.pubkey.get_pem()
+		rsapem,ecpem = friend.pubkey.get_pem_strings()
 		db.execute(
 			"INSERT INTO friends VALUES (?,?,?,?,?)",
 			(friend.id, friend.name, rsapem,
@@ -107,7 +106,7 @@ class FriendDb:
 			friend = Friend()
 			friend.id = row[0]
 			friend.name = row[1]
-			friend.pubkey.load_strings(row[2], row[3])
+			friend.pubkey.load_pem_strings(row[2], row[3])
 			friend.msgdbname = row[4]
 			friends[friend.id] = friend
 

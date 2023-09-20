@@ -164,7 +164,7 @@ class MsgStore:
 #			db_name = MsgStore.get_msgdb_name(friend.id)
 #			db_path = path_join(self.path, db_name)
 			conv = MsgDB()
-			conv.open(db_path, self.account.pw)
+			conv.open(db_path, self.account.mk)
 			self.conversations[friend.name] = conv
 
 

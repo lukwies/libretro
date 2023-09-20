@@ -42,12 +42,14 @@ T_FILE_DOWNLOAD
 
 32+16+32+6]
 """
-RETRO_PROTOCOL_VERSION_MAJOR = 0x01
-RETRO_PROTOCOL_VERSION_MINOR = 0x00
-RETRO_PROTOCOL_VERSION = 0x0101
+
+# Protocol version
+RETRO_PROTOCOL_VERSION = 0x0001
+RETRO_PROTOCOL_VERSION_STR = "0.1"
 
 
 class Proto:
+	# Packet header types
 	T_SUCCESS		= 1
 	T_ERROR			= 2
 	T_HELLO			= 3
@@ -55,35 +57,25 @@ class Proto:
 	T_REGISTER		= 5
 	T_PUBKEY		= 6
 	T_GET_PUBKEY		= 7
-
 	T_CHATMSG		= 10
 	T_FILEMSG		= 11
-
 	T_FRIENDS		= 20
 	T_FRIEND_ONLINE		= 21
 	T_FRIEND_OFFLINE	= 22
 	T_FRIEND_UNKNOWN	= 23
-
 	T_FILE_UPLOAD		= 31
 	T_FILE_DOWNLOAD		= 32
 
-	T_START_CALL		= 40
-	T_STOP_CALL		= 41
-	T_REJECT_CALL		= 42
-	T_ACCEPT_CALL		= 43
 
-
-	HDR_SIZE = 8	# Size of retro header (in byte)
-
-	USERID_SIZE  = 8
-	FILEID_SIZE  = 16
-	CALLID_SIZE  = 16
-	REGKEY_SIZE  = 32
-	AES_KEY_SIZE = 32
-	IV_SIZE      = 16
-	HMAC_SIZE    = 32
-	RSA_SIZE     = 256
-	EC_SIZE      = 64
+	HDR_SIZE     = 8   # Size of retro header (in byte)
+	USERID_SIZE  = 8   # UserId size (bytes)
+	FILEID_SIZE  = 16  # FileId size (bytes)
+	REGKEY_SIZE  = 32  # Registration key size
+	AES_KEY_SIZE = 32  # AES key size
+	IV_SIZE      = 16  # IV size
+	HMAC_SIZE    = 32  # HMAC size
+	RSA_SIZE     = 256 # RSA key size
+	EC_SIZE      = 64  # Ed25519 key size
 
 	UNPACK_T_HELLO  = [8, 32, None]
 	UNPACK_T_E2EMSG = [8, 8, RSA_SIZE, EC_SIZE, None]
@@ -207,54 +199,3 @@ class Proto:
 			return bytes.fromhex(hex_string)
 		except:	raise ValueError("Userid has invalid format")
 
-	'''\
-	@staticmethod
-	def pack_datetime(gmt=None):
-		"""\
-		Pack datetime (GMT) buffer.
-
-		Args:
-		  gm_time: GMT (returned by time.gmtime())
-		Return:
-		  Datetime (GMT) buffer (12 byte)
-		"""
-		if not gmt: gmt = time.gmtime(time.time())
-		return struct.pack('HHHHHH', gmt.tm_year,
-				gmt.tm_mon, gmt.tm_mday,
-				gmt.tm_hour, gmt.tm_min,
-				gmt.tm_sec)
-
-	@staticmethod
-	def unpack_datetime(gmt_buf):
-		"""\
-		Unpack datetime (GMT) from buffer.
-
-		Args:
-		  gmt_buffer: GMT buffer (12 byte)
-		Return:
-		  Formatted time string 'yyyy-mm-dd HH:MM:SS'
-		"""
-		return "{}-{}-{} {}:{}:{}".format(
-			struct.unpack('HHHHHH', gmt_buf))
-
-	'''
-
-"""\
-class Packet:
-	def __init__(self, ptype, *data):
-		self.ptype = ptype
-		self.data  = list(data)
-		self.size  = len(b''.join(data))
-
-	def pack(self):
-		pass
-
-	def unpack(self, buffer):
-		pass
-
-	def append(self, data):
-		self.data.append(data)
-
-	def tostr(self):
-		return ""
-"""

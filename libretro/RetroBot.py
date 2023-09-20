@@ -3,6 +3,7 @@
  |_/ |_   |  |_/ |  | |_/  |  |  |
  | \ |___ |  | \ |__| |__\ |__|  |
 
+
 Using this class you can simply create a retro bot.
 The only thing you need to do is to create a subclass
 of RetroBot and override the method handle_message().
@@ -36,10 +37,12 @@ bot.run()
 
 """
 
-import logging
 
 from os      import listdir  as os_listdir
 from os.path import join     as path_join
+
+import time
+import logging
 
 from libretro.protocol import *
 from libretro.RetroClient import RetroClient
@@ -51,16 +54,21 @@ from libretro.Friend import Friend
 LOG = logging.getLogger(__name__)
 
 class RetroBot:
-	def __init__(self):
+	def __init__(self, daemonize=False, pidfile=None):
 		"""\
 		Init RetroBot.
+		Args:
+		  daemonize: Run bot as daemon?
+		  pidfile:   Path to pidfile
 		"""
 		self.cli        = RetroClient() # RetroClient context
 		self.conf       = self.cli.conf	# Config
-		self.username   = None		# Username
-		self.userid     = None		# User ID
+		self.botname    = None		# Name of bot
+		self.botid      = None		# Bot ID
 		self.connected  = False		# Are we connected ?
-		self.fileTrans  = FileTrans(self.cli) # FileTransfer
+		self.fileTrans  = FileTransfer(self.cli) # FileTransfer
+		self.deamonize  = daemonize	# TODO
+		self.pidfile    = pidfile	# TODO
 		self.done       = True		# Done?
 
 
@@ -93,8 +101,8 @@ class RetroBot:
 		try:
 			print("Loading bot account {}...".format(username))
 			self.cli.load(username, password, is_bot=True)
-			self.username = self.cli.account.name
-			self.userid   = self.cli.account.id
+			self.botname = self.cli.account.name
+			self.botid   = self.cli.account.id
 			return True
 
 		except Exception as e:
@@ -169,32 +177,21 @@ class RetroBot:
 		"""\
 		Runs the main loop ...
 		"""
-		if not self.__connect():
-			return
+		self.done = False
 
-		while True:
+		while not self.done:
 
-			try:
-				pckt = self.cli.recv_packet(
-					timeout_sec=10)
-			except KeyboardInterrupt:
-				break
-			except Exception as e:
-				LOG.error("recv, " + str(e))
-				break
+			# Connect
+			self.__connect_loop()
 
-			if pckt == False:
-				continue
-			elif not pckt:
-				break
-			elif pckt[0] == Proto.T_CHATMSG:
-				self.__forward_chatmsg(pckt)
-			else:
-				LOG.warning("run: Invalid packet type ({})".format(pckt[0]))
+			# Receive loop
+			self.__recv_loop()
+
 
 		# Quitting ...
 		self.cli.send_packet(Proto.T_GOODBYE)
 		self.cli.close()
+
 
 
 	def send_msg(self, friend:Friend, text:str):
@@ -222,28 +219,48 @@ class RetroBot:
 
 	#-- PRIVATE --------------------------------------------------
 
-	def __connect(self):
+	def __connect_loop(self):
 		"""\
 		Connect to retro server.
 		"""
-		try:
-			# Connect to server
-			self.cli.connect()
-			self.connected = True
-			LOG.info("We are connected :-)")
-		except Exception as e:
-			LOG.error(str(e))
-			self.connected = False
-			return False
+		while not self.done:
+			try:
+				self.cli.connect()
+				self.connected = True
+				LOG.info("We are connected :-)")
+				break
 
-		# Send all friends to server to keep track of their
-		# status (online/offline)
-#		friend_ids = list(self.cli.account.friends.keys())
-#		if friend_ids:
-#			self.cli.send_packet(Proto.T_FRIENDS,
-#				b''.join(friend_ids))
+			except Exception as e:
+				LOG.error(str(e))
+				self.connected = False
+				self.__sleep(60)
 
-		return True
+
+	def __recv_loop(self):
+		while not self.done:
+			# Receive packet
+			try:
+				pckt = self.cli.recv_packet(
+					timeout_sec=10)
+			except KeyboardInterrupt:
+				self.done = True
+				break
+			except Exception as e:
+				LOG.error("recv, " + str(e))
+				break
+
+			if pckt == False:
+				continue
+			elif not pckt:
+				LOG.warning("recv, None")
+				break
+			elif pckt[0] == Proto.T_CHATMSG:
+				self.__forward_chatmsg(pckt)
+			else:
+				LOG.warning("Invalid packet type ({})"\
+					.format(pckt[0]))
+
+		self.connected = False
 
 
 	def __forward_chatmsg(self, pckt):
@@ -265,3 +282,13 @@ class RetroBot:
 		except Exception as e:
 			LOG.error("Forward chatmsg, "+str(e))
 			return False
+
+
+	def __sleep(self, seconds):
+		"""\
+		Sleep given amount of seconds.
+		Quits if bot stopped while sleeping.
+		"""
+		for i in range(seconds):
+			if self.done: break
+			time.sleep(1)

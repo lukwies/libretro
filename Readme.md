@@ -22,6 +22,7 @@ $ pip uninstall libretro
 ## Modules
 <pre>
 Account.py         User account
+AccountDb.py       User account database
 Config.py          Client configs
 crypto.py          Crypto and hash functions
 Friend.py          Friend class
@@ -77,3 +78,5 @@ bot.add_friend(friend_name, friend_id)
 <pre>
 bot.run()
 </pre>
+
+

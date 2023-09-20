@@ -1,3 +1,5 @@
+# TODO Do we really need Account.pubkey ????
+
 from os.path import join as path_join
 from os.path import exists as path_exists
 from os.path import expanduser
@@ -8,9 +10,10 @@ from os import mkdir as os_mkdir
 import logging
 from getpass import getpass
 
+from libretro.AccountDb import AccountDb
 from libretro.Friend import Friend
 from libretro.FriendDb import FriendDb
-from libretro.crypto import RetroPrivateKey, RetroPublicKey
+from libretro.crypto import RetroPrivateKey, RetroPublicKey, derive_key
 
 LOG = logging.getLogger(__name__)
 
@@ -24,19 +27,14 @@ while account registration.
 Files:
 
   ~/.retro/accounts/
-  |__ <user-1>/                      # User directory
-  |    |__ key.pem                   # Private keys
-  |    |__ <username>.pem            # Public keys
-  |    |__ downloads/
-  |    |__ friends/                  # Friends directory
-  |        |__ friends.db            # Friends database
-  |        |__ msg/	             # Dir with msgdbs
-  |            |__ <friend1msgdb>    # Msg database file 1
+  |__ <username>/               # User directory
+  |    |__ account.db		# Account database
+  |    |__ downloads/		# Optional download dir
+  |    |__ friends/             # Friends directory
+  |        |__ friends.db       # Friends database
+  |        |__ msg/	        # Dir with msgdbs
   |            |__ ...
-  |
-  |__ <user-2>/
-      |__ key.pem
-      |__ ...
+  |__ ...
 
 """
 class Account:
@@ -51,10 +49,11 @@ class Account:
 		self.is_bot    = False	# Is bot account?
 		self.id        = None	# User ID (8 byte)
 		self.name      = None	# Username
-		self.pw        = None	# Password
+#		self.pw        = None	# Password
+		self.mk        = None	# Master key
 		self.path      = None	# Account path
-		self.key       = RetroPrivateKey()
-		self.pubkey    = RetroPublicKey()
+		self.key       = RetroPrivateKey() # Private keys
+		self.pubkey    = RetroPublicKey()  # Public keys
 		self.frienddir = None	# Friends directory
 		self.friendDb  = None	# See FriendDb
 		self.friends   = {}	# Key=userID, Value=Friend
@@ -66,7 +65,7 @@ class Account:
 
 		Args:
 		  username: Account's username
-		  password: Password for private key
+		  password: Account password
 		  is_bot:   Account is a bot account
 
 		Return:
@@ -90,17 +89,20 @@ class Account:
 				.format(username, self.path))
 
 		self.is_bot = is_bot
-		self.name   = username
-		self.pw     = password
 
-		# Load users private and public rsa/ed25519 keys
-		self.__load_keys()
+		# Derive master key from password
+		self.mk = derive_key(password, 20, return_hex=True)
 
+		# Get userid, username and keys
+		accDb = AccountDb(self.path)
+		self.id,self.name,self.key = accDb.select(self.mk)
+		self.pubkey = self.key.get_public()
+
+		# Init friends directory and database
 		self.frienddir = path_join(self.path, "friends")
-
-		# Create frienddb for resolving userids to usernames
-		dbpath  = path_join(self.frienddir, "friends.db")
-		self.friendDb = FriendDb(dbpath, password)
+		self.friendDb = FriendDb(
+			path_join(self.frienddir, "friends.db"),
+			self.mk)
 
 		# Load all friends of this account
 		self.load_friends()
@@ -133,10 +135,7 @@ class Account:
 		friend.name = username
 		friend.msgdbname = FriendDb.get_random_dbname(
 					self.frienddir)
-
-		LOG.debug("LOAD PUBKEY FROM PEM BUF\n{}\n".format(pk_pembuf))
-		friend.pubkey.load_string(pk_pembuf.decode())
-
+		friend.pubkey.load_pem_string(pk_pembuf.decode())
 		self.friendDb.add(friend)
 		self.friends[friend.id] = friend
 
@@ -186,52 +185,7 @@ class Account:
 				return friend
 		return None
 
-	def __load_keys(self):
-		# Load users private and public rsa/ed25519 keys
-		try:
-			kpath = path_join(self.path, "key.pem")
-			LOG.debug("Load private key " + kpath)
-			self.key.load(kpath, self.pw)
 
-			pk_loaded = False
-			# Since we don't know the name of the public keyfile
-			# take the first '.pem' file that's not 'key.pem'.
-			# The name of that file also is the account id (in hex).
-			for f in os_listdir(self.path):
-				if f.endswith('.pem') and f != 'key.pem':
-
-					# Set account id
-					hexid = f.replace('.pem', '')
-					self.id = bytes.fromhex(hexid)
-
-					pkpath = path_join(self.path, f)
-					LOG.debug("Load public key " + pkpath)
-					self.pubkey.load_file(pkpath)
-					pk_loaded = True
-			if not pk_loaded:
-				raise FileNotFoundError("No pubkey found in "+self.path)
-
-		except FileNotFoundError as e:
-			raise FileNotFoundError("Account.load_keys: " + str(e))
-		except Exception as e:
-			raise Exception("Account.load_keys: " + str(e))
-
-	# TODO
-	"""
-	def __load_account_config(self):
-		try:
-			confpath = path_join(self.path, "config.txt")
-			conf = configparser.ConfigParser()
-			conf.read(confpath)
-
-			self.name = conf.get("Account", "username")
-			self.idx  = conf.get("Account", "userid")
-			self.id   = bytes.fromhex(self.useridx)
-		except configparser.NoOptionError as e:
-			raise Exception("Load account config, "+str(e))
-		except:
-			raise
-	"""
 
 
 def get_all_accounts(accounts_dir=None):

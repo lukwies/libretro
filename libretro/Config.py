@@ -8,12 +8,12 @@ import traceback
 
 
 """\
-Basic configs
+Retro client configs
 """
 
-RETRO_MAX_FILESIZE = 0x40000000
-
 LOG = logging.getLogger(__name__)
+
+RETRO_MAX_FILESIZE = 0x40000000
 
 class Config:
 	def __init__(self, basedir=None):
@@ -39,7 +39,6 @@ class Config:
 		self.server_hostname  = self.server_address
 		self.server_port      = 8443
 		self.server_fileport  = 8444
-		self.server_audioport = 8445
 		self.server_certfile  = path_join(self.basedir, 'server-cert.pem')
 
 
@@ -75,9 +74,6 @@ class Config:
 			self.server_fileport = conf.getint('server',
 						'fileport',
 						fallback=self.server_fileport)
-			self.server_audioport = conf.getint('server',
-						'audioport',
-						fallback=self.server_audioport)
 			self.server_hostname = conf.get('server', 'hostname',
 						fallback=self.server_hostname)
 			self.server_certfile = conf.get('server', 'certificate',
@@ -105,7 +101,6 @@ class Config:
 		LOG.debug("  hostname       = {}".format(self.server_hostname))
 		LOG.debug("  port           = {}".format(self.server_port))
 		LOG.debug("  fileport       = {}".format(self.server_fileport))
-		LOG.debug("  audioport      = {}".format(self.server_audioport))
 
 
 	def loglevel_string_to_level(self, loglevel_str):
@@ -130,8 +125,6 @@ class Config:
 				.format(loglevel_str))
 		else:
 			return levels[levstr]
-
-
 
 
 	def __get_download_dir(self):

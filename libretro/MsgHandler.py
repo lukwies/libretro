@@ -25,17 +25,18 @@ An unencrypted chat message has the following format:
     'msg'    : MESSAGE TEXT
     'unseen' : 1|0
 
-    'fileid      : FILE_ID,	# These values are
-    'filename'   : FILE_NAME,	# only existant if
-    'size'       : FILE_SIZE,	# message type is
-    'key'        : base64(KEY),	# Proto.T_FILEMSG
-    'downloaded' : True|False	#
+    # If type is Proto.T_FILEMSG
+    'fileid      : FILE_ID,
+    'filename'   : FILE_NAME,
+    'size'       : FILE_SIZE,
+    'key'        : base64(KEY),
+    'downloaded' : True|False
   }
 
 An encrypted chat message looks like:
 
   version	2 byte
-  packet type	2 byte (T_CHATMSG|T_FILEMSG|T_START_CALL)
+  packet type	2 byte (T_CHATMSG|T_FILEMSG|T_VOICEMSG)
   payload size	4 byte
   from		8 byte
   to		8 byte
@@ -145,7 +146,6 @@ class MsgHandler:
 		Supported message types are:
 			Proto.T_CHATMSG
 			Proto.T_FILEMSG
-			Proto.T_START_CALL
 		Args:
 		  msg_type: Type of received packet
 		  e2e_msg: e2e enctypted message (bytes)
@@ -211,9 +211,6 @@ class MsgHandler:
 			file_dict = json.loads(msg_text)
 			msg_res = dict(msg_res, **file_dict)
 			msg_res['downloaded'] = False
-		elif msg_type == Proto.T_START_CALL:
-			call_dict = json.loads(msg_text)
-			msg_res = dict(msg_res, **call_dict)
 		else:
 			msg_res['msg'] = msg_text
 

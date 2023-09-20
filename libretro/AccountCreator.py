@@ -7,9 +7,9 @@ import logging
 from libretro.protocol import *
 from libretro.Config import Config
 from libretro.net import NetClient
-from libretro.crypto import RetroPrivateKey, RetroPublicKey
+from libretro.AccountDb import AccountDb
+from libretro.crypto import RetroPrivateKey, RetroPublicKey, derive_key
 from libretro.RegKey import RegKey
-
 
 """\
 Create and register a new retro account which can either be
@@ -114,22 +114,27 @@ class AccountCreator:
 		conn.close()
 
 		try:
+			# Derive master key from password
+			master_key = derive_key(password, 20,
+					return_hex=True)
+
 			# Create directories
 			accpath = path_join(self.acc_path, username)
 			os_mkdir(accpath)
 
-#			if not is_bot:
-				# The message directory is only for
-				# non-bot accounts.
-#				os_mkdir(path_join(accpath, "msg"))
+			# Create encrypted account database
+			db = AccountDb(accpath)
+			db.create(master_key, userid, username, key)
 
+			# Create friend directory
 			frdir = path_join(accpath, "friends")
 			os_mkdir(frdir)
 			os_mkdir(path_join(frdir, "msg"))
+#			if not is_bot:
+				# The message directory is only for
+				# non-bot accounts.
+#				os_mkdir(path_join(frdir, "msg"))
 
-			# Save key pairs
-			key.save(path_join(accpath, "key.pem"), password)
-			pubkey.save(path_join(accpath, userid.hex()+".pem"))
 
 			print(". Created {}Account \033[1;33m{}\033[0m"\
 				.format("Bot " if is_bot else "", username))
@@ -257,7 +262,7 @@ class AccountCreator:
 			if not pw: return None
 
 			# Validate if is secure password?
-			if secure:
+			if validate:
 				try:
 					AccountCreator.validate_password(pw)
 				except Exception as e:
@@ -297,7 +302,7 @@ class AccountCreator:
 		  True or False
 		"""
 		conn.send_packet(Proto.T_PUBKEY,
-				pubkey.to_pem())
+			pubkey.get_pem_string().encode())
 
 		pckt = conn.recv_packet(timeout_sec=10)
 

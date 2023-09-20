@@ -23,6 +23,9 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from base64 import b64encode,b64decode
 
 import zlib
+import logging
+
+LOG = logging.getLogger(__name__)
 
 """\
 A retro user key consists of 2 different keys, a RSA-2048 key used
@@ -60,56 +63,31 @@ class RetroPrivateKey:
 		self.ec = Ed25519PrivateKey.generate()
 
 
-	def load(self, path, password=None):
+	def load_pem_strings(self, rsa_pem, ec_pem):
 		"""\
-		Load public RSA and ED25519 keys.
-		Args:
-		  path: Path to public keyfile
+		Init private keys by parsing given PEM strings.
 		"""
-		f = open(path, "r")
-		data = f.read()
-		f.close()
-
-		# Extract both keys
-		try:
-			start = data.index("-----BEGIN")
-			end   = data[start+1:].index("-----BEGIN")
-			k1 = data[start:end-1].strip()
-			k2 = data[end:].strip()
-		except:
-			raise ValueError("RetroPublicKey.load: "\
-				"Invalid file format in " + path)
-
-		# Parse keys from PEM strings
 		self.rsa = load_pem_private_key(
-				data=k1.encode('utf-8'),
-				password=password.encode())
+				data=rsa_pem.encode('utf-8'),
+				password=None)
 		self.ec = load_pem_private_key(
-				data=k2.encode('utf-8'),
-				password=password.encode())
+				data=ec_pem.encode('utf-8'),
+				password=None)
 
 
-	def save(self, path, password):
+	def get_pem_strings(self):
 		"""\
-		Save public keys to file. The filemode will be set to 600.
-		Args:
-		  path: Path to public keyfile
+		Returns both, the rsa and ed25519 key as PEM strings.
 		"""
-
 		srsa = self.rsa.private_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PrivateFormat.PKCS8,
-			encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8')))
-
+			encryption_algorithm=serialization.NoEncryption())
 		sec = self.ec.private_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PrivateFormat.PKCS8,
-			encryption_algorithm=serialization.BestAvailableEncryption(password.encode('utf-8')))
-
-		key_file = open(path, "wb")
-		key_file.write(srsa + b'\n' + sec)
-		key_file.close()
-		os_chmod(path, 0o600)
+			encryption_algorithm=serialization.NoEncryption())
+		return srsa.decode(), sec.decode()
 
 
 	def decrypt(self, data, data_is_base64=False):
@@ -176,7 +154,7 @@ class RetroPublicKey:
 		self.ec  = None
 
 
-	def load(self, path):
+	def load_pem_file(self, path):
 		"""\
 		Load public RSA and ED25519 keys.
 		Args:
@@ -185,40 +163,56 @@ class RetroPublicKey:
 		f = open(path, "r")
 		data = f.read()
 		f.close()
+		self.load_pem_string(data)
 
+
+	def load_pem_string(self, pem):
+		"""\
+		Load both keys from a concatenated PEM string.
+		"""
 		# Extract both keys
 		try:
-			start = data.index("-----BEGIN")
-			end   = data[start+1:].index("-----BEGIN")
-			k1 = data[start:end-1].strip()
-			k2 = data[end:].strip()
+			start = pem.index("-----BEGIN")
+			end   = pem[start+1:].index("-----BEGIN")
+			k1 = pem[start:end-1].strip()
+			k2 = pem[end:].strip()
+			self.load_pem_strings(k1, k2)
 		except:
-			raise ValueError("RetroPublicKey.load: "\
-				"Invalid file format in " + path)
+			raise #ValueError("Invalid PEM format")
 
-		# Parse keys from PEM strings
-		self.rsa = load_pem_public_key(data=k1.encode('utf-8'))
-		self.ec  = load_pem_public_key(data=k2.encode('utf-8'))
+	def load_pem_strings(self, rsa_pem, ec_pem):
+		"""\
+		Load both keys from single pem strings.
+		"""
+		self.rsa = load_pem_public_key(data=rsa_pem.encode('utf-8'))
+		self.ec  = load_pem_public_key(data=ec_pem.encode('utf-8'))
 
 
-	def save(self, path):
+	def save_pem_file(self, path):
 		"""\
 		Save public keys to file. The filemode will be set to 600.
 		Args:
 		  path: Path to public keyfile
 		"""
-		key_file = open(path, "wb")
-		key_file.write(self.to_pem())
-#		key_file.write(srsa + b'\n' + sec)
+		key_file = open(path, "w")
+		key_file.write(self.get_pem_string())
 		key_file.close()
 		os_chmod(path, 0o600)
 
 
-	def to_pem(self):
+	def get_pem_string(self):
 		"""\
-		Get keys as PEM strings.
+		Get keys as concatenated PEM string.
 		Return:
-		  rsa-pem, ec-pem
+		  rsapem + "\n" + ecpem
+		"""
+		srsa,sec = self.get_pem_strings()
+		return srsa + '\n' + sec
+
+
+	def get_pem_strings(self):
+		"""\
+		Get PEM strings.
 		"""
 		srsa = self.rsa.public_bytes(
 			encoding=serialization.Encoding.PEM,
@@ -226,7 +220,7 @@ class RetroPublicKey:
 		sec = self.ec.public_bytes(
 			encoding=serialization.Encoding.PEM,
 			format=serialization.PublicFormat.SubjectPublicKeyInfo)
-		return srsa + b'\n' + sec
+		return srsa.decode(),sec.decode()
 
 
 	def to_der(self):
@@ -288,6 +282,16 @@ def random_buffer(length, return_hex=False):
 		return os_urandom(int(length/2)).hex()
 	else:	return os_urandom(length)
 
+def derive_key(password, outlen, iterations=10000, return_hex=False):
+	"""\
+	Derive key or password from given password.
+	"""
+	key = password.encode()
+	for i in range(iterations):
+		key = hash_sha512(key)
+	if return_hex:
+		key = key.hex()
+	return key[:outlen]
 
 def hash_sha256(data, return_hex=False):
 	"""\
@@ -415,24 +419,4 @@ def aes_decrypt_to_file(key, file_buf, filepath):
 	dec  = aes_decrypt(key, enc, iv)
 	fout.write(zlib.decompress(dec))
 	fout.close()
-
-
-#####
-#k = RetroPrivateKey()
-#k.gen()
-
-#pk = k.get_public()
-
-#r,e = pk.to_der()
-
-
-#pem = pk.to_pem().decode()
-#print(pem)
-#print(len(pem))
-
-#enc = pk.encrypt(b"Hello World")
-#print("RSA encrypt len: {}".format(len(enc)))
-
-#sig = k.sign(b"Hello World")
-#print("Signature len: {}".format(len(sig)))
 
