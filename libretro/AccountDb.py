@@ -3,7 +3,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 import logging
 
 from libretro.crypto import RetroPrivateKey
-from libretro.crypto import random_buffer, derive_key
+from libretro.crypto import random_buffer
 
 LOG = logging.getLogger(__name__)
 
@@ -44,7 +44,6 @@ class AccountDb:
 		Creates account database and inserts the one
 		and only row...
 		"""
-		pw = derive_key(pw, 20, return_hex=True)
 		rsa,ec = retroPrivKey.get_pem_strings()
 		db = self.__open(pw)
 		q = "INSERT INTO account VALUES (?,?,?,?)"
@@ -60,7 +59,6 @@ class AccountDb:
 		Return:
 		  userid,username,RetroPrivKey
 		"""
-		pw = derive_key(pw, 20, return_hex=True)
 		db = self.__open(pw)
 		row = db.execute("SELECT * FROM account").fetchone()
 		userid = row[0]

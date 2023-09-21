@@ -83,10 +83,6 @@ class Config:
 			raise Exception("Config.load: " + str(e))
 		except Exception as e:
 			raise Exception("Config.load: " + str(e))
-#			LOG.error("Reading config file '"+self.config_file+"'")
-#			LOG.error("Config: " + str(e))
-#			traceback.print_exc()
-#			return False
 
 
 	def debug(self):

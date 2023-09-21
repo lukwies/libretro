@@ -1,5 +1,3 @@
-# TODO Do we really need Account.pubkey ????
-
 from os.path import join as path_join
 from os.path import exists as path_exists
 from os.path import expanduser
@@ -13,7 +11,8 @@ from getpass import getpass
 from libretro.AccountDb import AccountDb
 from libretro.Friend import Friend
 from libretro.FriendDb import FriendDb
-from libretro.crypto import RetroPrivateKey, RetroPublicKey, derive_key
+from libretro.crypto import RetroPrivateKey
+from libretro.crypto import derive_key, read_salt_from_file
 
 LOG = logging.getLogger(__name__)
 
@@ -27,14 +26,13 @@ while account registration.
 Files:
 
   ~/.retro/accounts/
-  |__ <username>/               # User directory
-  |    |__ account.db		# Account database
-  |    |__ downloads/		# Optional download dir
-  |    |__ friends/             # Friends directory
-  |        |__ friends.db       # Friends database
-  |        |__ msg/	        # Dir with msgdbs
-  |            |__ ...
-  |__ ...
+     |__ <username>/       	# User directory
+     |    |__ .salt		# Saltfile
+     |    |__ account.db	# Account database
+     |    |__ friends.db	# Friends database
+     |    |__ msg/	        # Dir with msgdbs
+     |        |__ ...
+     |__ ...
 
 """
 class Account:
@@ -49,12 +47,9 @@ class Account:
 		self.is_bot    = False	# Is bot account?
 		self.id        = None	# User ID (8 byte)
 		self.name      = None	# Username
-#		self.pw        = None	# Password
 		self.mk        = None	# Master key
 		self.path      = None	# Account path
 		self.key       = RetroPrivateKey() # Private keys
-		self.pubkey    = RetroPublicKey()  # Public keys
-		self.frienddir = None	# Friends directory
 		self.friendDb  = None	# See FriendDb
 		self.friends   = {}	# Key=userID, Value=Friend
 
@@ -66,7 +61,7 @@ class Account:
 		Args:
 		  username: Account's username
 		  password: Account password
-		  is_bot:   Account is a bot account
+		  is_bot:   Account is a bot account?
 
 		Return:
 		  True if successfully loaded, else False
@@ -83,26 +78,27 @@ class Account:
 		self.path = path_join(accdir, username)
 
 		if not path_exists(self.path):
-			# raise RetroAccountNotFound()
-			raise FileNotFoundError(
-				"Account.load: No such account '{}' at {}"\
+			raise FileNotFoundError("Account.load: "\
+				"No such account '{}' at {}"\
 				.format(username, self.path))
 
 		self.is_bot = is_bot
 
-		# Derive master key from password
-		self.mk = derive_key(password, 20, return_hex=True)
+		# Load salt from saltfile and derive master key
+		salt_file = path_join(self.path, ".salt")
+		salt = read_salt_from_file(salt_file)
+		self.mk = derive_key(password, salt, 16).hex()
 
-		# Get userid, username and keys
+		# Load userid, username and keys from account db
 		accDb = AccountDb(self.path)
 		self.id,self.name,self.key = accDb.select(self.mk)
-		self.pubkey = self.key.get_public()
 
-		# Init friends directory and database
-		self.frienddir = path_join(self.path, "friends")
-		self.friendDb = FriendDb(
-			path_join(self.frienddir, "friends.db"),
-			self.mk)
+		# After loading the account database, the masterkey
+		# is updated to avoid holding the real key in memory.
+		self.mk = derive_key(self.mk, salt, 16, 200000).hex()
+
+		# Init friends database
+		self.friendDb = FriendDb(self)
 
 		# Load all friends of this account
 		self.load_friends()
@@ -134,7 +130,7 @@ class Account:
 		friend.id = userid
 		friend.name = username
 		friend.msgdbname = FriendDb.get_random_dbname(
-					self.frienddir)
+					self.path)
 		friend.pubkey.load_pem_string(pk_pembuf.decode())
 		self.friendDb.add(friend)
 		self.friends[friend.id] = friend
@@ -156,7 +152,7 @@ class Account:
 		self.friendDb.delete_by_id(friend.id)
 
 		dbpath = path_join(
-			path_join(self.frienddir, "msg"),
+			path_join(self.path, "msg"),
 			friend.msgdbname)
 
 		# Msg database might not exist

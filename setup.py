@@ -4,7 +4,7 @@ from setuptools import setup,find_packages
 
 setup(
 	name='libretro',
-	version='0.1.0',
+	version='0.1.1',
 	description='core library of the retro messenger',
 	url='https://github.com/lukwies/libretro',
 	author='Lukas Wiese',

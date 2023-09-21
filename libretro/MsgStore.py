@@ -5,6 +5,7 @@ from sqlcipher3 import dbapi2 as sqlcipher
 from time import time as time_now
 
 from libretro.protocol import Proto
+from libretro.crypto import derive_key
 
 LOG = logging.getLogger(__name__)
 
@@ -34,16 +35,6 @@ class MsgStore:
 		# Dictionary with conversations where key=FriendName
 		# and value=Conversation
 		self.conversations = {}
-
-
-	@staticmethod
-	def get_msgdb_name(friend_id):
-		"""\
-		Returns the name of the message database for
-		a certain friend (id). The name is the friend's
-		userid in hex and the extension '.db'.
-		"""
-		return friend_id.hex() + ".db"
 
 
 	def close(self):
@@ -86,6 +77,7 @@ class MsgStore:
 		msgid = self.conversations[friend.name].add_msg(msg)
 		self._close_unused_conversations()
 		return msgid
+
 
 	def get_msgs(self, friend, last_n=None, msg_type=None):
 		"""
@@ -151,20 +143,23 @@ class MsgStore:
 		self._close_unused_conversations()
 
 
-
 	def _open_conversation(self, friend):
 		"""
 		Make sure there's an open conversation with
 		given friend.
 		"""
 		if friend.name not in self.conversations:
+
 			db_path = path_join(
-				path_join(self.account.frienddir,"msg"),
+				path_join(self.account.path, "msg"),
 				friend.msgdbname)
-#			db_name = MsgStore.get_msgdb_name(friend.id)
-#			db_path = path_join(self.path, db_name)
+			db_key = derive_key(self.account.mk,
+					salt=friend.id,
+					iterations=100000,
+					keylen=16).hex()
+
 			conv = MsgDB()
-			conv.open(db_path, self.account.mk)
+			conv.open(db_path, db_key)
 			self.conversations[friend.name] = conv
 
 
@@ -187,8 +182,7 @@ class MsgStore:
 """
 For each friend there's an encrypted sqlite3 db containing
 all messages of the conversation between a friend and the
-client. Each entry has the flag '_read' which tells us if
-a message has been read by the user or not.
+client.
 
  +--------------------------------------------------------------+
  | msg                                                          |

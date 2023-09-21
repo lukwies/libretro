@@ -4,12 +4,12 @@ import logging
 from sqlcipher3 import dbapi2 as sqlcipher
 
 from libretro.Friend import Friend
-from libretro.crypto import hash_sha256, random_buffer
+from libretro.crypto import hash_sha256, random_buffer, derive_key
 
 LOG = logging.getLogger(__name__)
 
 """
-This database stores all friend informations.
+This database stores all friend informations (encrypted).
 It is located at ~/.retro/accounts/$USER/friends/friend.db
 
  +-----------------------------------------------+
@@ -42,14 +42,14 @@ class FriendDb:
 			_msgdbname TEXT NOT NULL)'''
 
 	@staticmethod
-	def get_random_dbname(friends_dir):
+	def get_random_dbname(account_dir):
 		"""\
 		Get a random (not existing) filename for
 		a message database.
 		Return:
 		   filename,filepath
 		"""
-		msgdir = path_join(friends_dir, "msg")
+		msgdir = path_join(account_dir, "msg")
 		while True:
 			filename = random_buffer(16, True)
 			filepath = path_join(msgdir, filename)
@@ -57,12 +57,19 @@ class FriendDb:
 				return filename
 
 
-	def __init__(self, path, password):
+	def __init__(self, account):
 		"""
+		Init an account's friend database.
+		The database password will be created with PBKDF2
+		using the master key and the accountID as salt.
+
 		Args:
+		  account: Account where the FriendDb relies to
 		"""
-		self.path = path
-		self.key  = hash_sha256(password.encode(), True)
+		self.account = account
+		self.path = path_join(account.path, "friends.db")
+		self.key = derive_key(account.mk,
+				salt=account.id, keylen=16).hex()
 
 
 	def add(self, friend):
@@ -77,6 +84,7 @@ class FriendDb:
 			ecpem, friend.msgdbname))
 		db.commit()
 		db.close()
+
 
 	def delete_by_id(self, userid):
 		"""\
@@ -112,24 +120,6 @@ class FriendDb:
 
 		db.close()
 		return friends
-
-
-	def get_id(self, username):
-		db  = self.__open()
-		q   = "SELECT _id FROM friends WHERE _name=?"
-		res = db.execute(q, (username,))
-		id  = res.fetchone()[0]
-		db.close()
-		return id
-
-
-	def get_name(self, userid):
-		db   = self.__open()
-		q    = "SELECT _name FROM friends WHERE _id=?"
-		res  = db.execute(q, (userid,))
-		name = res.fetchone()[0]
-		db.close()
-		return name
 
 
 	def __open(self):

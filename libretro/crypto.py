@@ -170,15 +170,12 @@ class RetroPublicKey:
 		"""\
 		Load both keys from a concatenated PEM string.
 		"""
-		# Extract both keys
-		try:
-			start = pem.index("-----BEGIN")
-			end   = pem[start+1:].index("-----BEGIN")
-			k1 = pem[start:end-1].strip()
-			k2 = pem[end:].strip()
-			self.load_pem_strings(k1, k2)
-		except:
-			raise #ValueError("Invalid PEM format")
+		start = pem.index("-----BEGIN")
+		end   = pem[start+1:].index("-----BEGIN")
+		k1 = pem[start:end-1].strip()
+		k2 = pem[end:].strip()
+		self.load_pem_strings(k1, k2)
+
 
 	def load_pem_strings(self, rsa_pem, ec_pem):
 		"""\
@@ -272,7 +269,6 @@ class RetroPublicKey:
 			return False
 
 
-########################################
 
 def random_buffer(length, return_hex=False):
 	"""\
@@ -282,16 +278,65 @@ def random_buffer(length, return_hex=False):
 		return os_urandom(int(length/2)).hex()
 	else:	return os_urandom(length)
 
-def derive_key(password, outlen, iterations=10000, return_hex=False):
+
+def create_salt_file(filepath, saltlen=16):
 	"""\
-	Derive key or password from given password.
+	Create a random salt and store it to given filepath.
+	The salt file will be a binary file!
+	Args:
+	  filepath: Path to saltfile
+	  saltlen:  Length of salt
+	Return:
+	  Salt as bytes
 	"""
-	key = password.encode()
-	for i in range(iterations):
-		key = hash_sha512(key)
-	if return_hex:
-		key = key.hex()
-	return key[:outlen]
+	salt = random_buffer(saltlen)
+	f = open(filepath, "wb")
+	f.write(salt)
+	f.close()
+	return salt
+
+def read_salt_from_file(filepath):
+	"""\
+	Read salt from given file and return it.
+	Args:
+	  filepath: Path to saltfile
+	Return:
+	  Salt as bytes
+	"""
+	f = open(filepath, "rb")
+	salt = f.read()
+	f.close()
+	return salt
+
+
+def derive_key(password, salt=None, keylen=32,
+			iterations=500000):
+	"""\
+	Use PBKDF2 to derive a key from given password
+	and salt.
+	Args:
+	  password: Password string
+	  salt:     Salt (bytes)
+	  keylen:   Length of key
+	Return:
+	  The derived key as bytes
+	"""
+	if salt == None:
+		key = password.encode()
+		for i in range(iterations):
+			key = hash_sha512(key)
+		key = key[:keylen]
+	else:
+		kdf = PBKDF2HMAC(
+			algorithm=hashes.SHA256(),
+			length=keylen,
+			salt=salt,
+			iterations=iterations)
+		key = kdf.derive(password.encode('utf-8'))
+
+
+	return key
+
 
 def hash_sha256(data, return_hex=False):
 	"""\
@@ -419,4 +464,6 @@ def aes_decrypt_to_file(key, file_buf, filepath):
 	dec  = aes_decrypt(key, enc, iv)
 	fout.write(zlib.decompress(dec))
 	fout.close()
+
+
 

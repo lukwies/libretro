@@ -8,51 +8,29 @@ from libretro.protocol import *
 from libretro.Config import Config
 from libretro.net import NetClient
 from libretro.AccountDb import AccountDb
-from libretro.crypto import RetroPrivateKey, RetroPublicKey, derive_key
+from libretro.crypto import RetroPrivateKey, RetroPublicKey
+from libretro.crypto import random_buffer, derive_key, create_salt_file
 from libretro.RegKey import RegKey
 
 """\
 Create and register a new retro account which can either be
 a normal user account or a bot account.
 
-1) Read registration key file
-2) Connect to server and send regkey
-3) if error quit, if success ...
-4) Let user input name and password
-5) Generate retro keys
-6) Send public key to server
-7) Create account dirtree
-
-CLIENT                SERVER
-  |---- T_REGISTER ---->|
-  |     regkey (32)     |
-
-  |<--- T_SUCCESS ------|
-  |     userid (8)      |
-
-  |---- T_PUBKEY ------>|
-  |     pubkey (n)      |
-
-  |<--- T_SUCCESS ------|
-
 
 # Account directory of normal users
 
-  ~/.retro/accounts/
-     |__ <username>/            # User directory
-        |__ key.pem             # Private keys
-        |__ <userid>.pem	# Public keys
-        |__ msgs/		# Messages
-        |__ friends/            # Friends
+  ~/.retro/accounts/<username>
+     |__ .salt		# Salt file
+     |__ account.db	# Account database
+     |__ friends.db	# Friends database
+     |__ msg/		# Holds all message dbs
 
 # Account directory of bots
- ... or ...
 
-  ~/.retro/bots/
-     |__ <botname>/            	# Bot directory
-        |__ key.pem             # Private keys
-        |__ <botid>.pem		# Public keys
-        |__ friends/            # Friends of bot
+  ~/.retro/bots/<botname>
+     |__ .salt		# Salt file
+     |__ account.db	# Account database
+     |__ friends.db	# Friends database
 
 """
 
@@ -72,6 +50,7 @@ class AccountCreator:
 			validate_password=False):
 		"""\
 		Create and register new user or bot account.
+		NOTE: This will ask user to enter some values
 
 		Args:
 		  regkey_file: Path to registration keyfile.
@@ -114,27 +93,25 @@ class AccountCreator:
 		conn.close()
 
 		try:
-			# Derive master key from password
-			master_key = derive_key(password, 20,
-					return_hex=True)
-
 			# Create directories
 			accpath = path_join(self.acc_path, username)
 			os_mkdir(accpath)
+
+			# Create random salt and store it. Then derive
+			# masterkey from password and salt.
+			salt_file = path_join(accpath, ".salt")
+			salt = create_salt_file(salt_file, saltlen=32)
+			master_key = derive_key(password, salt, 16).hex()
 
 			# Create encrypted account database
 			db = AccountDb(accpath)
 			db.create(master_key, userid, username, key)
 
 			# Create friend directory
-			frdir = path_join(accpath, "friends")
-			os_mkdir(frdir)
-			os_mkdir(path_join(frdir, "msg"))
-#			if not is_bot:
+			if not is_bot:
 				# The message directory is only for
 				# non-bot accounts.
-#				os_mkdir(path_join(frdir, "msg"))
-
+				os_mkdir(path_join(accpath, "msg"))
 
 			print(". Created {}Account \033[1;33m{}\033[0m"\
 				.format("Bot " if is_bot else "", username))

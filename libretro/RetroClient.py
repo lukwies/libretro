@@ -18,14 +18,11 @@ Requires the following directory tree:
   |__ server-cert.pem			# Server certificate
   |__ accounts/				# All accounts
       |__ <username>/			# User directory
-          |__ key.pem			# Private key
-          |__ <userID>.pem		# Public key
-	  |__ msgs/			# Conversations dir
-          |__ friends/			# Friends directory
-              |__ <userID1>.pem		# Pubkey of friend 1
-              |__ <userID2>.pem		# Pubkey of friend 2
+	  |__ .salt
+          |__ account.db
+          |__ friends.db
+	  |__ msgs/
 	      |__ ...
-
 """
 
 LOG = logging.getLogger()
